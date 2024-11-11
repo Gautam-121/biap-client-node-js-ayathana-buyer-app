@@ -14,7 +14,7 @@ const billing =  {
         body('address.tag').isIn(['Home', 'Office', 'Others']).withMessage('Tag must be either "Home", "Office", or "Others"'),
         body('address.country').isIn(['IND']).withMessage('Country code must be a valid 3-character country code (e.g., IND )'),
         body('address.lat').isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
-        body('address.lng').isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
+        body('address.lng').isFloat({ min: -180, max: 180 }).withMessage('Longitude  must be between -180 and 180'),
     ],
     updateBillingAddress : [
         body('name').notEmpty().withMessage('Name is required').isString().withMessage("Name must be a string"),
