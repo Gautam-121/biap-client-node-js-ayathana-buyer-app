@@ -63,9 +63,31 @@ class DeliveryAddressController {
 
         const { body: request, params, user } = req;
         const { id } = params;
+        const {uid} = user?.decodedToken;
 
         if(id && id.length)
-            deliveryAddressService.updateDeliveryAddress(id, request, user?.decodedToken?.uid).then(response => {
+            deliveryAddressService.updateDeliveryAddress(id, request, uid).then(response => {
+                res.json(response);
+            }).catch((err) => {
+                next(err);
+            });
+        else
+            throw new BadRequestParameterError();
+    }
+
+    deleteDeliveryAddress(req, res, next) {
+
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+
+        const { body: request, params, user } = req;
+        const { id } = params;
+        const {uid} = user?.decodedToken;
+
+        if(id && id.length)
+            deliveryAddressService.deleteDeliveryAddress(id, request, uid).then(response => {
                 res.json(response);
             }).catch((err) => {
                 next(err);

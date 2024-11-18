@@ -18,7 +18,7 @@ class BppOrderStatusService {
             
             const response = await protocolOrderStatus(orderStatusRequest);
 
-            return { context: context, message: response.message };
+            return { context: context, message: response?.message , error: response?.error };
         }
         catch (err) {
             throw err;

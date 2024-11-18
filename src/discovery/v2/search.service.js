@@ -206,12 +206,141 @@ class SearchService {
         size: size,
         sort: sort.length ? sort : undefined
       });
+
+      // Process results and add customization items
+      const enhancedResults = await Promise.all(
+        (queryResults.hits?.hits || []).map(async (hit) => {
+          const item = hit._source;
+          
+          // Initialize customisation_items array
+          item.customisation_items = [];
+          
+          // Handle customization groups if they exist
+          if (Array.isArray(item?.customisation_groups) && item.customisation_groups.length > 0) {
+            const groupIds = item.customisation_groups
+              .map((data) => data?.id)
+              .filter(Boolean);
+
+            if (groupIds.length > 0) {
+              // Construct customization query
+              const customisationQuery = {
+                bool: {
+                  must: [
+                    {
+                      terms: {
+                        customisation_group_id: groupIds
+                      }
+                    },
+                    {
+                      match: {
+                        type: "customization"
+                      }
+                    },
+                    {
+                      match: {
+                        language: targetLanguage
+                      }
+                    }
+                  ]
+                }
+              };
+
+              // Execute customization items query
+              const customisationResults = await client.search({
+                query: customisationQuery,
+                size: 100
+              });
+
+              // Add customization items to the item
+              item.customisation_items = customisationResults.hits.hits.map(
+                (customHit) => customHit._source || {}
+              );
+            }
+          }
+
+          // Handle related items if parent_item_id exists
+          if (item?.item_details?.parent_item_id) {
+            const relatedQuery = {
+              bool: {
+                must: [
+                  {
+                    match: {
+                      language: targetLanguage
+                    }
+                  },
+                  {
+                    match: {
+                      "item_details.parent_item_id": item.item_details.parent_item_id
+                    }
+                  },
+                  {
+                    match: {
+                      "provider_details.id": item.provider_details?.id
+                    }
+                  },
+                  {
+                    match: {
+                      "location_details.id": item.location_details?.id
+                    }
+                  }
+                ]
+              }
+            };
+
+            const relatedResults = await client.search({
+              query: relatedQuery,
+              size: 100
+            });
+
+            // Add related items with mapped attributes
+            item.related_items = relatedResults.hits.hits.map((relatedHit) => {
+              const data = relatedHit._source || {};
+              
+              // Map attribute key-values for related items
+              if (Array.isArray(data?.attribute_key_values)) {
+                const flatObject = {};
+                data.attribute_key_values.forEach(pair => {
+                  if (pair?.key && pair?.value) {
+                    flatObject[pair.key] = pair.value;
+                  }
+                });
+                data.attributes = flatObject;
+              }
+              
+              return data;
+            });
+          }
+
+          // Map attribute key-values for main item
+          if (Array.isArray(item?.attribute_key_values)) {
+            const flatObject = {};
+            item.attribute_key_values.forEach(pair => {
+              if (pair?.key && pair?.value) {
+                flatObject[pair.key] = pair.value;
+              }
+            });
+            item.attributes = flatObject;
+          }
+
+          // Add locations array if location_details exists
+          if (item?.location_details) {
+            item.locations = [item.location_details];
+          }
+
+          return item;
+        })
+      );
   
       // Format and return the response
       return {
+        // response: {
+        //   count: queryResults.hits?.total?.value || 0,
+        //   data: queryResults.hits?.hits.map(hit => hit._source) || [],
+        //   pages: Math.ceil((queryResults.hits?.total?.value || 0) / size)
+        // }
         response: {
           count: queryResults.hits?.total?.value || 0,
-          data: queryResults.hits?.hits.map(hit => hit._source) || [],
+          data: enhancedResults,
           pages: Math.ceil((queryResults.hits?.total?.value || 0) / size)
         }
       };
@@ -221,8 +350,6 @@ class SearchService {
     }
   }
 
-  
-  
   async globalSearchItems(searchRequest = {}, targetLanguage = "en") {
     try {
       let matchQuery = [];

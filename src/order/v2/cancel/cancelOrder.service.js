@@ -28,14 +28,17 @@ class CancelOrderService {
             console.log("cancel order-------------->",orderRequest);
 
             const orderDetails = await getOrderById(orderRequest.message.order_id);
-            if(orderDetails[0].userId !==user.decodedToken.uid){
-                return []
+            if (orderDetails[0].userId !== user.decodedToken.uid) {
+                return {
+                    status: 403,
+                    error: { message: "UNAUTHORIZED USER" }
+                };
             }
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
                 action: PROTOCOL_CONTEXT.CANCEL,
                 transactionId: orderDetails[0].transactionId,
-                bppId: orderRequest?.context?.bpp_id,
+                bppId: orderDetails[0]?.bppId,
                 bpp_uri: orderDetails[0].bpp_uri,
                 cityCode:orderDetails[0].city,
                 city:orderDetails[0].city,

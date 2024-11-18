@@ -32,6 +32,9 @@ const delivery =  {
         body('address.lng').isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
     
         param("id").isUUID().withMessage("must be valid uuid")
+    ],
+    deleteDeliveryAddress : [
+        param("id").isUUID().withMessage("must be valid uuid")
     ]
 }
 

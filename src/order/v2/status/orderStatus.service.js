@@ -37,7 +37,7 @@ class OrderStatusService {
             const context = contextFactory.create({
                 action: PROTOCOL_CONTEXT.STATUS,
                 transactionId: orderDetails[0]?.transactionId,
-                bppId: requestContext?.bpp_id,
+                bppId: orderDetails[0]?.bppId,
                 bpp_uri: orderDetails[0]?.bpp_uri,
                 cityCode: orderDetails[0].city,
                 city: orderDetails[0].city,
@@ -72,7 +72,8 @@ class OrderStatusService {
                     return orderResponse;
                 }
                 catch (err) {
-                    return err.response.data;
+                    console.log(err)
+                    return err;
                 }
             })
         );

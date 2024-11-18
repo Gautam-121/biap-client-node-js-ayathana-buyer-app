@@ -55,6 +55,13 @@ rootRouter.put(
     deliveryAddressController.updateDeliveryAddress,
 );
 
+rootRouter.delete(
+    '/v1/delete_delivery_address/:id', 
+    authentication(),
+    deliveryValidator.deleteDeliveryAddress,
+    deliveryAddressController.deleteDeliveryAddress,
+);
+
 rootRouter.get(
     '/v2/map/accesstoken',
     authentication(),

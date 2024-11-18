@@ -22,7 +22,7 @@ class BppCancelService {
 
             const response = await protocolCancel(cancelRequest);
 
-            return { context: context, message: response.message };
+            return { context: context, message: response.message , error: response?.error };
         }
         catch (err) {
 

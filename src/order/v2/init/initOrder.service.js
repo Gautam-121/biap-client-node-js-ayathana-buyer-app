@@ -295,11 +295,11 @@ class InitOrderService {
                     break;
                 }else{
 
-                    // const checkQuantity = validateQuantity(items , item)
+                    const checkQuantity = validateQuantity(items , item)
                     
-                    // if(checkQuantity?.status==400){
-                    //     return checkQuantity
-                    // }
+                    if(checkQuantity?.status==400){
+                        return checkQuantity
+                    }
     
                     if(item?.customizations && item.customizations.length > 0 && items?.customisation_items?.length == 0){
                         return { status: 400 , error: { message: `No custumaztion available for item:${item?.itemId}`} }

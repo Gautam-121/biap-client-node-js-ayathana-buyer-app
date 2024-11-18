@@ -20,7 +20,7 @@ class BppTrackService {
                         
             const response = await protocolTrack(trackRequest);
             
-            return { context: context, message: response.message };
+            return { context: context, message: response?.message , error: response?.error };
         }
         catch (err) {
             throw err;

@@ -77,7 +77,7 @@ rootRouter.post(
     initOrderController.initOrder,
 );
 
-// initialize order v2
+// initialize order v2 //
 rootRouter.post(
     '/v2/initialize_order', 
     authentication(),
@@ -88,7 +88,7 @@ rootRouter.post(
 // on initialize order v1
 //rootRouter.get('/v2/on_initialize_order', initOrderController.onInitOrder);
 
-// on initialize order v2
+// on initialize order v2 //
 rootRouter.get('/v2/on_initialize_order', authentication(), initValidator.on_init , initOrderController.onInitMultipleOrder);
 
 //#endregion
@@ -125,8 +125,8 @@ rootRouter.post(
     selectOrderController.selectOrder,
 );
 
-// select order v2
-rootRouter.post(
+// select order v2 //
+rootRouter.post( 
     '/v2/select', 
     authentication(),
     selectValidator.select,
@@ -142,7 +142,7 @@ rootRouter.post(
 // on select order v1
 rootRouter.get('/v1/on_select', authentication(), selectOrderController.onSelectOrder);
 
-// on select order v2
+// on select order v2 //
 rootRouter.get('/v2/on_select', authentication(), selectValidator.on_select , selectOrderController.onSelectMultipleOrder);
 
 rootRouter.post('/v2/update', authentication(), updateOrderController.update);

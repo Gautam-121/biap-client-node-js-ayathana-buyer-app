@@ -95,7 +95,7 @@ class DeliveryAddressService {
             };
     
             // Find the existing delivery address by its ID
-            let storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne({ id: id })
+            let storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne({ id: id , userId: userId })
             
             if (!storedDeliveryAddress) {
                 throw new NoRecordFoundError(`Delivery address with id ${id} not found`);
@@ -139,6 +139,51 @@ class DeliveryAddressService {
             throw err;
         }
     }
+
+    /**
+     * Delete a delivery address
+     * @param {String} id - Address ID to delete
+     * @param {String} userId - User ID of the owner
+     */
+    async deleteDeliveryAddress(id, request={}, userId) {
+        try {
+            // Fetch the delivery address to be delete
+            const addressToDelete = await DeliveryAddressMongooseModel.findOne({ id, userId });
+
+            // If the address does not exist, throw an error
+            if (!addressToDelete) {
+                throw new NoRecordFoundError(`Delivery address with id ${id} not found`);
+            }
+
+            // Check if the address to be deleted is the default address
+            const isDefaultAddress = addressToDelete.defaultAddress;
+
+            // Delete the address
+            await DeliveryAddressMongooseModel.deleteOne({ id, userId });
+
+            // If the deleted address was the default, set a new default address
+            if (isDefaultAddress) {
+                const remainingAddresses = await DeliveryAddressMongooseModel.find({ userId });
+
+                if (remainingAddresses.length > 0) {
+                    // Set the first remaining address as the new default
+                    await DeliveryAddressMongooseModel.updateOne(
+                        { id: remainingAddresses[0].id },
+                        { defaultAddress: true }
+                    );
+                }
+            }
+
+            return {
+                success: true,
+                message: `Delivery address with id ${id} deleted successfully`
+            };
+        } catch (err) {
+            console.error('Error in deleteDeliveryAddress:', err.message);
+            throw err;
+        }
+    }
+
 
 }
 
