@@ -13,7 +13,7 @@ class BppSearchService {
             const { criteria = {}, payment = {} } = req || {};
 
             const searchRequest = {
-                context: context,
+                context: context ,
                 message: {
                     intent: {
                         ...(
