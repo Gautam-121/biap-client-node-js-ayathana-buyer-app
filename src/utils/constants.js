@@ -149,3 +149,11 @@ export const PLATFORMS = {
     ANDROID: 'android',
     IOS: 'ios'
 };
+
+// Define channel constants
+export const NOTIFICATION_CHANNELS = {
+    ORDERS: 'orders-channel',
+    CHAT: 'chat-channel',
+    PROMOTIONAL: 'promotional-channel',
+    DEFAULT: 'default-channel'
+  };

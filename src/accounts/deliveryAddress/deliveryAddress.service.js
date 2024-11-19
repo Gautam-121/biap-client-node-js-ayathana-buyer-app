@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import NoRecordFoundError from '../../lib/errors/no-record-found.error.js';
-
 import DeliveryAddressMongooseModel from './db/deliveryAddress.js';
+import BadRequestParameterError from '../../lib/errors/bad-request-parameter.error.js';
 
 class DeliveryAddressService {
 
@@ -99,6 +99,10 @@ class DeliveryAddressService {
             
             if (!storedDeliveryAddress) {
                 throw new NoRecordFoundError(`Delivery address with id ${id} not found`);
+            }
+
+            if(storedDeliveryAddress?.defaultAddress && !request?.defaultAddress) {
+                throw new BadRequestParameterError('Default address cannot be removed');
             }
     
             // If `defaultAddress` is set to true, update all other addresses to `defaultAddress: false`
