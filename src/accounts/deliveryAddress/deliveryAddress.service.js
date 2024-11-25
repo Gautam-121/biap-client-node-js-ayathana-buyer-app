@@ -17,12 +17,25 @@ class DeliveryAddressService {
             const deliveryAddressSchema = {
                 userId: user?.decodedToken?.uid, 
                 id: uuidv4(), 
-                descriptor: request?.descriptor,
-                gps: request?.gps, 
+                descriptor: {
+                    name: request?.descriptor?.name,
+                    phone: request?.descriptor?.phone,
+                    email: request?.descriptor?.email
+                },
+                gps: `${request?.lat},${request?.lng}`, 
                 defaultAddress: true, 
-                address: request?.address, 
-                lat: request?.lat, 
-                lng: request?.lng
+                address: {
+                    areaCode: request?.address?.areaCode,
+                    door: request?.address?.door,
+                    building: request?.address?.building,
+                    street: request?.address?.street,
+                    city: request?.address?.city,
+                    state: request?.address?.state,
+                    tag: request?.address?.tag,
+                    country: request?.address?.country,
+                    lat: request?.address?.lat  , 
+                    lng: request?.address?.lng
+                }, 
             };
     
         // Mark all previous addresses for the user as non-default
@@ -49,7 +62,6 @@ class DeliveryAddressService {
                 lng: storedDeliveryAddress?.lng 
             };
         } catch (err) {
-
             // Log error for debugging and rethrow
             console.error('Error in deliveryAddress:', err.message);
             throw err;
@@ -86,12 +98,25 @@ class DeliveryAddressService {
 
             // Define the schema with the updated values
             const deliveryAddressSchema = {
-                descriptor: request?.descriptor,
-                gps: request?.gps,
+                descriptor: {
+                    name: request?.descriptor?.name,
+                    phone: request?.descriptor?.phone,
+                    email: request?.descriptor?.email
+                },
+                gps: `${request?.lat},${request?.lng}`,
                 defaultAddress: request?.defaultAddress,
-                address: request?.address,
-                lat: request?.lat,
-                lng: request?.lng
+                address: {
+                    areaCode: request?.address?.areaCode,
+                    door: request?.address?.door,
+                    building: request?.address?.building,
+                    street: request?.address?.street,
+                    city: request?.address?.city,
+                    state: request?.address?.state,
+                    tag: request?.address?.tag,
+                    country: request?.address?.country,
+                    lat: request?.address?.lat,
+                    lng: request?.address?.lng
+                }
             };
     
             // Find the existing delivery address by its ID
@@ -101,8 +126,8 @@ class DeliveryAddressService {
                 throw new NoRecordFoundError(`Delivery address with id ${id} not found`);
             }
 
-            if(storedDeliveryAddress?.defaultAddress && !request?.defaultAddress) {
-                throw new BadRequestParameterError('Default address cannot be removed');
+            if(storedDeliveryAddress?.defaultAddress && (typeof(request?.defaultAddress) !== 'undefined' && request?.defaultAddress === false)) {
+                throw new BadRequestParameterError('Default address cannot be unset. To change default address, please set another address as default first.');
             }
     
             // If `defaultAddress` is set to true, update all other addresses to `defaultAddress: false`
@@ -135,10 +160,8 @@ class DeliveryAddressService {
                 lng: storedDeliveryAddress?.lng
             };
         } catch (err) {
-
             // Log the error for debugging purposes
             console.error('Error in updateDeliveryAddress:', err.message);
-    
             // Throw the error back to the caller
             throw err;
         }

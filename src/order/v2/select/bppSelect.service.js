@@ -115,11 +115,10 @@ class BppSelectService {
             return { context: context, message: response?.message , error: response?.error };
         }
         catch (err) {
-
-
-            console.log(err);
-            err.response.data.selectRequest =order
-
+            console.error("Error in select:", err);
+            if (err.response?.data) {
+                err.response.data.selectRequest = order;
+            }
             throw err;
         }
     }

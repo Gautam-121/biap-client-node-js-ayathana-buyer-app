@@ -20,22 +20,23 @@ const selectValidator = {
 
         // Validate items in the message.cart.items array
         body('*.message.cart.items')
-            .isArray()
-            .withMessage('Items must be an array'),
+            .isArray({min:1})
+            .withMessage('Items must be an array with at least one item'),
 
         body('*.message.cart.items.*.itemId')
-            .isString()
-            .withMessage('Each item must have a valid itemId'),
+            .exists().withMessage("Item ID is required for each item")
+            .isString().withMessage('Each item must have a valid itemId'),
 
         body('*.message.cart.items.*.quantity')
+            .exists().withMessage("Quantity is required for each item")
             .isInt({ min: 1 })
             .withMessage('Quantity must be an integer greater than 0'),
 
         // Optional customizations validation
         body('*.message.cart.items.*.customizations')
             .optional()
-            .isArray()
-            .withMessage('Customizations must be an array'),
+            .isArray({min:1})
+            .withMessage('Customizations must be an array with at least one customization'),
 
         body('*.message.cart.items.*.customizations.*.groupId')
             .if(body('*.message.cart.items.*.customizations').exists())
@@ -64,10 +65,15 @@ const selectValidator = {
             return true;
         }),
 
+        body('*.message.cart.offers')
+            .optional()
+            .isArray({min:1})
+            .withMessage('Offers must be an array with at least one offer'),
+
         // Validate fulfillments array
         body('*.message.fulfillments')
-            .isArray()
-            .withMessage('Fulfillments must be an array'),
+            .isArray({min:1})
+            .withMessage('Fulfillments must be an array with at least one fulfillment'),
 
         // GPS validation
         body('*.message.fulfillments.*.end.location.gps')
@@ -82,6 +88,7 @@ const selectValidator = {
             .withMessage('Fulfillment address area_code must be a string')
             .custom((value) => /^\d{6}$/.test(value))
             .withMessage('Fulfillment address area_code must be a valid 6-digit Indian pincode'),
+        
     ],
     on_select: [
       // Validate the `messageIds` query parameter

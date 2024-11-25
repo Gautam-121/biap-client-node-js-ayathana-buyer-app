@@ -11,6 +11,7 @@ const bppSearchService = new SearchService();
 const bppInitService = new BppInitService();
 import crypto from 'crypto'
 import { response } from "express";
+import DeliveryAddressMongooseModel from "../../../accounts/deliveryAddress/db/deliveryAddress.js";
 
 class InitOrderService {
 
@@ -430,10 +431,93 @@ class InitOrderService {
     async initMultipleOrder(orders, user) {
 
         console.log("orders------->",orders)
+
+        // Find the existing delivery address by its ID
+        let storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne({ id: orders?.[0]?.message?.delivery_info?.id , userId: user.decodedToken.uid })
+            
+        if (!storedDeliveryAddress) {
+            return [
+                {
+                    status: 404,
+                    error: { message: `Delivery address not found with id:${orders?.[0]?.message?.delivery_info?.id}` }
+                }
+            ]
+        }
+
         const initOrderResponse = await Promise.all(
             orders.map(async order => {
                 try {
                     console.log("orders---pre---->",order)
+                    order = {
+                        context: {
+                            city: order?.context?.city,
+                            domain: order?.context?.domain,
+                            transaction_id: order?.context?.transaction_id,
+                        },
+                        message: {
+                            items: order?.items.map(item => ({
+                                itemId: item?.itemId,
+                                quantity: item?.quantity,
+                                customizations: item?.customizations
+                            })),
+                            fulfillments: order?.fulfillments.map(fulfillment => ({ 
+                                id: fulfillment?.id,
+                                type: fulfillment?.type,
+                                "@ondc/org/provider_name": fulfillment?.["@ondc/org/provider_name"],
+                                tracking: fulfillment?.tracking,
+                                "@ondc/org/category": fulfillment?.["@ondc/org/category"],
+                                "@ondc/org/TAT": fulfillment?.["@ondc/org/TAT"],
+                                state: {
+                                    descriptor: {
+                                        code: fulfillment?.start?.descriptor?.code,
+                                    }
+                                }
+                            })),
+                            offers: order?.offers,
+                            billing_info: {
+                                address: {
+                                    door: storedDeliveryAddress?.address?.door,
+                                    building: storedDeliveryAddress?.address?.building,
+                                    street: storedDeliveryAddress?.address?.street,
+                                    city: storedDeliveryAddress?.address?.city,
+                                    state: storedDeliveryAddress?.address?.state,
+                                    country: storedDeliveryAddress?.address?.country,
+                                    areaCode: storedDeliveryAddress?.address?.areaCode,
+                                    tag: storedDeliveryAddress?.address?.tag,
+                                    lat: storedDeliveryAddress?.address?.lat,
+                                    lng: storedDeliveryAddress?.address?.lng
+                                },
+                                phone: storedDeliveryAddress?.descriptor?.phone,
+                                name: storedDeliveryAddress?.descriptor?.name,
+                                email: storedDeliveryAddress?.descriptor?.email
+                            },
+                            delivery_info: {
+                                type: "Delivery",
+                                name: storedDeliveryAddress?.descriptor?.name,
+                                phone: storedDeliveryAddress?.descriptor?.phone,
+                                email: storedDeliveryAddress?.descriptor?.email,
+                                location: {
+                                    gps: storedDeliveryAddress?.gps,
+                                    address: {
+                                        door: storedDeliveryAddress?.address?.door,
+                                        building: storedDeliveryAddress?.address?.building,
+                                        street: storedDeliveryAddress?.address?.street,
+                                        city: storedDeliveryAddress?.address?.city,
+                                        state: storedDeliveryAddress?.address?.state,
+                                        country: storedDeliveryAddress?.address?.country,
+                                        areaCode: storedDeliveryAddress?.address?.areaCode,
+                                        tag: storedDeliveryAddress?.address?.tag,
+                                        lat: storedDeliveryAddress?.address?.lat,
+                                        lng: storedDeliveryAddress?.address?.lng
+                                    }
+                                }
+                            },
+                            payment: {
+                                type: order?.payment?.type,
+                            }
+                        }
+                    }
+                    
                     const bppResponse = await this.initOrder(order, orders.length > 1);
 
                     if(bppResponse?.error && Object.keys(bppResponse?.error).length == 0){

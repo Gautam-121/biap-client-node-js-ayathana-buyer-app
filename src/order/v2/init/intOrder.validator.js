@@ -5,7 +5,7 @@ import { validate as uuidValidate } from 'uuid';
 // Regular expression for validating GPS coordinates (latitude,longitude)
 const gpsRegex = /^-?(90(\.0+)?|[1-8]?\d(\.\d+)?),\s*-?(180(\.0+)?|1[0-7]\d(\.\d+)?|\d{1,2}(\.\d+)?)$/;
 
-const selectValidator = {
+const initValidator = {
     init: [
         // Context Validations
         body('*.context.transaction_id')
@@ -71,7 +71,7 @@ const selectValidator = {
     
         body('*.message.fulfillments.*.type')
             .exists().withMessage("Fulfillment type is required")
-            .isString().withMessage("Type must be a string"),
+            .isIn(['Delivery', 'Self-Pickup']).withMessage("Fulfillment type must be one of 'Delivery' or 'Self-Pickup'"),
     
         // Message -> Billing Info Validations
         body('*.message.billing_info').exists().withMessage("Billing information is required"),
@@ -132,7 +132,7 @@ const selectValidator = {
 
         body('*.message.delivery_info.type')
             .exists().withMessage("Delivery type is required")
-            .isString().withMessage("Delivery type must be a string"),
+            .isIn(['Delivery', 'Self-Pickup']).withMessage("Fulfillment type must be one of 'Delivery' or 'Self-Pickup'"),
 
         body('*.message.delivery_info.name')
             .exists().withMessage("Delivery name is required")
@@ -189,7 +189,7 @@ const selectValidator = {
         // Message -> Payment Validations
         body('*.message.payment.type')
             .exists().withMessage("Payment type is required")
-            .isString().withMessage("Payment type must be a string"),
+            .isIn(['ON-ORDER', 'FULFILLMENT']).withMessage("Payment type must be one of 'ON-ORDER' or 'FULFILLMENT'"),
 
     ],
     on_init: [
@@ -226,7 +226,84 @@ const selectValidator = {
 
             return true;
         }),
-    ]
+    ],
+    inits: [
+        // Context Validations
+        body('*.context.transaction_id')
+            .exists().withMessage("Transaction ID is required")
+            .isUUID().withMessage("Transaction ID must be a valid UUID"),
+        
+        body('*.context.city')
+            .exists().withMessage("City code is required")
+            .isString().withMessage("City code must be a string"),
+        
+        body('*.context.domain')
+            .isString()
+            .withMessage('Context domain must be a string')
+            .isIn(domainEnum)
+            .withMessage(`Context domain must be one of the following values: ${domainEnum.join(', ')}`),
+    
+        // Message -> Items Validations
+        body('*.message.items').isArray({ min: 1 }).withMessage("Items must be an array with at least one item"),
+    
+        body('*.message.items.*.itemId')
+            .exists().withMessage("Item ID is required for each item")
+            .isString().withMessage("Item ID must be a string"),
+    
+        body('*.message.items.*.quantity')
+            .exists().withMessage("Quantity is required for each item")
+            .isInt({ min: 1 }).withMessage("Quantity must be an integer greater than 0"),
+    
+        // Optional customizations validation
+        body('*.message.items.*.customizations')
+            .optional()
+            .isArray()
+            .withMessage('Customizations must be an array'),
+    
+        body('*.message.items.*.customizations.*.groupId')
+            .if(body('*.message.items.*.customizations').exists())
+            .isString()
+            .withMessage('Each customization must have a valid groupId'),
+    
+        body('*.message.items.*.customizations.*.choiceId')
+            .if(body('*.message.items.*.customizations').exists())
+            .isString()
+            .withMessage('Each customization must have a valid choiceId'),
+    
+        // Custom validation for duplicate customizations in each item
+        body('*.message.items.*.customizations').custom((customizations) => {
+            if (!customizations) return true;
+    
+            const seen = new Set();
+            for (const cust of customizations) {
+                const key = `${cust.groupId}_${cust.choiceId}`;
+                if (seen.has(key)) {
+                    throw new Error(`Duplicate selection found: choiceId ${cust.choiceId} in group ${cust.groupId}`);
+                }
+                seen.add(key);
+            }
+            return true;
+        }),
+    
+        // Message -> Fulfillments Validations
+        body('*.message.fulfillments').isArray({ min: 1 }).withMessage("Fulfillments must be an array with at least one fulfillment"),
+        body('*.message.fulfillments.*.id')
+            .exists().withMessage("Fulfillment ID is required"),
+    
+        body('*.message.fulfillments.*.type')
+            .exists().withMessage("Fulfillment type is required")
+            .isIn(['Delivery', 'Self-Pickup']).withMessage("Fulfillment type must be one of 'Delivery' or 'Self-Pickup'"),
+
+        body('*.message.delivery_info.*.id')
+            .exists().withMessage("Delivery ID is required")
+            .isUUID().withMessage("Delivery ID must be a valid UUID"),
+        
+        body('*.message.payment.type')
+            .exists().withMessage("Payment type is required")
+            .isIn(['ON-ORDER', 'FULFILLMENT']).withMessage("Payment type must be one of 'ON-ORDER' or 'FULFILLMENT'"),
+
+
+    ],
 };
 
-export default selectValidator;
+export default initValidator;

@@ -210,6 +210,32 @@ class SelectOrderService {
         const selectOrderResponse = await Promise.all(
             requests.map(async request => {
                 try {
+                    request = {
+                        context: {
+                            domain: request?.context?.domain,
+                            city: request?.context?.city,
+                        },
+                        message: {
+                            cart: {
+                                items: request?.message?.cart?.items.map(item => ({
+                                    itemId: item?.itemId,
+                                    quantity: item?.quantity,
+                                    customizations: item?.customizations
+                                })),
+                                offers: request?.message?.offers,
+                                fulfillments: request?.message?.fulfillments.map(fulfillment => ({
+                                    end:{
+                                        location: {
+                                            gps: fulfillment?.end?.location?.gps,
+                                            address: {
+                                                areaCode: fulfillment?.end?.location?.address?.areaCode,
+                                            }
+                                        },
+                                    }
+                                })) 
+                            }
+                        }
+                    }
                     const response = await this.selectOrder(request);
                     return response;
                 }
