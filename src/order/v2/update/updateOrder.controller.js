@@ -1,5 +1,6 @@
 import UpdateOrderService from './updateOrder.service.js';
 import BadRequestParameterError from '../../../lib/errors/bad-request-parameter.error.js';
+import { validationResult } from "express-validator"
 
 const cancelOrderService = new UpdateOrderService();
 
@@ -12,6 +13,12 @@ class UpdateOrderController {
     * @return {callback}
     */
     async update(req, res, next) {
+
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const {body: orders,user} = req;
 
         // console.log("orderStatus-------------------->",orders)

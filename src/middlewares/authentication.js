@@ -1,6 +1,9 @@
 // import { UnauthenticatedError } from '../lib/errors/index.js';
 // import validateToken from '../lib/firebase/validateToken.js';
-// import MESSAGES from '../utils/messages.js';
+// import messagesModule from '../utils/messages.js';
+
+// //Access the MESSAGES object
+// const { MESSAGES } = messagesModule;
 
 // const authentication =  (options) => (req, res, next) => {
 //     const authHeader = req.headers.authorization;
@@ -24,7 +27,12 @@
 
 import { UnauthenticatedError } from '../lib/errors/index.js';
 import jwt from 'jsonwebtoken';
-import MESSAGES from '../utils/messages.js';
+import UserMongooseModel from '../user/db/user.js';
+import AdminMongooseModel from '../admin/db/admin.js'
+import messagesModule from '../utils/messages.js';
+
+// Access the MESSAGES object
+const { MESSAGES } = messagesModule;
 
 const authentication = (options) => async (req, res, next) => {
 
@@ -41,23 +49,21 @@ const authentication = (options) => async (req, res, next) => {
     try {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_access_token_secret');
-        req.user = { decodedToken: decoded, token };
+        req.user = { decodedToken: decoded.decodedToken , token };
 
         // Get user ID from token
-        const userId = decoded.uid;
+        const userId = decoded?.decodedToken?.uid;
 
         // Find user
-        const user = await UserMongooseModel.findById(userId);
+        const user = decoded.decodedToken.role == "ADMIN" ? await AdminMongooseModel.findById(userId) : await UserMongooseModel.findById(userId)
+
+        // const user =  await UserMongooseModel.findById(userId)
 
         if (!user) {
-            return next(new ErrorHandler("Invalid token or user not found", 401));
+            return next(new UnauthenticatedError("Invalid token or user not found"));
         }
 
-        if(user.isEmailVerified) {
-            next();
-        } else {
-            return next(new UnauthenticatedError(MESSAGES.LOGIN_ERROR_EMAIL_NOT_VERIFIED));
-        }
+        next()
 
     } catch (error) {
 

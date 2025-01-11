@@ -168,9 +168,14 @@ app.get('/', (req, res) => {
 
 
 // Route not found handler
+// Route not found handler
 app.get("*", (req, res) => {
-    res.status(404).send("API NOT FOUND");
+    res.status(404).json({
+        success: false,
+        message: "The requested API endpoint could not be found. Please check the URL or refer to the API documentation for available routes."
+    });
 });
+
 
 const port = process.env.PORT || 8080;
 

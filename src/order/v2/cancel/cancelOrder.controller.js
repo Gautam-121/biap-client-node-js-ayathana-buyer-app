@@ -12,6 +12,11 @@ class CancelOrderController {
     * @return {callback}
     */
     cancelOrder(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const orderRequest = req.body;
         const user = req.user
 

@@ -4,6 +4,9 @@ import { authentication } from '../../middlewares/index.js';
 import selectValidator from './select/selectOrder.validator.js';
 import initValidator from "./init/intOrder.validator.js"
 import orderHistoryValidator from "./history/orderHistory.validator.js"
+import statusValidator from './status/statusOrder.validator.js';
+import cancelValidator from './cancel/cancelOrder.validator.js';
+import updateOrderValidator from './update/updateOrder.validator.js';
 
 import CancelOrderController from './cancel/cancelOrder.controller.js';
 import ConfirmOrderController from './confirm/confirmOrder.controller.js';
@@ -33,7 +36,7 @@ const ratingController = new  RatingController();
 
 
 // confirm order v1
-rootRouter.post(
+rootRouter.post( // Not-Required
     '/v1/confirm_order',
     confirmOrderController.confirmOrder,
 );
@@ -46,7 +49,7 @@ rootRouter.post(
 );
 
 // on confirm order v1
-rootRouter.get('/v1/on_confirm_order', confirmOrderController.onConfirmOrder);
+rootRouter.get('/v1/on_confirm_order', confirmOrderController.onConfirmOrder); // Not-Required
 
 // on confirm order v2
 rootRouter.get('/v2/on_confirm_order', authentication(), confirmOrderController.onConfirmMultipleOrder);
@@ -58,27 +61,28 @@ rootRouter.get('/v2/on_confirm_order', authentication(), confirmOrderController.
 rootRouter.post(
     '/v2/cancel_order',
     authentication(),
+    cancelValidator.cancel,
     cancelOrderController.cancelOrder,
 );
 
-rootRouter.get('/v2/on_cancel_order', authentication(), cancelOrderController.onCancelOrder);
+rootRouter.get('/v2/on_cancel_order', authentication(), cancelValidator.on_cancel, cancelOrderController.onCancelOrder);
 
 //#endregion
 
 //#region order history
-rootRouter.get('/v2/orders', authentication(), orderHistoryValidator.orderList ,  orderHistoryController.getOrdersList);
+rootRouter.get('/v2/orders', authentication(), orderHistoryValidator.orderList ,  orderHistoryController.getOrdersList); // done
 //#endregion
 
 //#region Initialize order
 
 // initialize order v1
-rootRouter.post(
+rootRouter.post( // Not-Required
     '/v1/initialize_order',
     initOrderController.initOrder,
 );
 
 // initialize order v2 //
-rootRouter.post(
+rootRouter.post( 
     '/v2/initialize_order', 
     authentication(),
     initValidator.init,
@@ -89,14 +93,14 @@ rootRouter.post(
 //rootRouter.get('/v2/on_initialize_order', initOrderController.onInitOrder);
 
 // on initialize order v2 //
-rootRouter.get('/v2/on_initialize_order', authentication(), initValidator.on_init , initOrderController.onInitMultipleOrder);
+rootRouter.get('/v2/on_initialize_order', authentication(), initValidator.on_init , initOrderController.onInitMultipleOrder); // done
 
 //#endregion
 
 //#region order status
 
 // order status v1
-rootRouter.post(
+rootRouter.post( // Not-Required
     '/v1/order_status',
     orderStatusController.orderStatus,
 );
@@ -105,28 +109,29 @@ rootRouter.post(
 rootRouter.post(
     '/v2/order_status', 
     authentication(),
+    statusValidator.status,
     orderStatusController.orderStatusV2,
 );
 
 // on order status v1
-rootRouter.get('/v1/on_order_status', orderStatusController.onOrderStatus);
+rootRouter.get('/v1/on_order_status', orderStatusController.onOrderStatus); // Not-Required
 
 // on order status v2
-rootRouter.get('/v2/on_order_status', authentication(), orderStatusController.onOrderStatusV2);
+rootRouter.get('/v2/on_order_status', authentication(), statusValidator.on_status ,  orderStatusController.onOrderStatusV2); // done
 
 //#endregion
 
 //#region select order
 
 // select order v1
-rootRouter.post(
+rootRouter.post( // Not-Required
     '/v1/select', 
     authentication(),
     selectOrderController.selectOrder,
 );
 
 // select order v2 //
-rootRouter.post( 
+rootRouter.post(  // done
     '/v2/select', 
     authentication(),
     selectValidator.select,
@@ -140,18 +145,18 @@ rootRouter.post(
 );
 
 // on select order v1
-rootRouter.get('/v1/on_select', authentication(), selectOrderController.onSelectOrder);
+rootRouter.get('/v1/on_select', authentication(), selectOrderController.onSelectOrder);// Not-Required
 
 // on select order v2 //
-rootRouter.get('/v2/on_select', authentication(), selectValidator.on_select , selectOrderController.onSelectMultipleOrder);
+rootRouter.get('/v2/on_select', authentication(), selectValidator.on_select , selectOrderController.onSelectMultipleOrder); // done
 
-rootRouter.post('/v2/update', authentication(), updateOrderController.update);
+rootRouter.post('/v2/update', authentication(), updateOrderValidator.update ,  updateOrderController.update);
 
 rootRouter.get('/v2/on_update', authentication(), updateOrderController.onUpdate);
 
 rootRouter.post('/v2/getSignUrlForUpload/:orderId', authentication(), uploadController.upload);
 
-rootRouter.get('/v2/orders/:orderId', authentication(), confirmOrderController.orderDetails);
+rootRouter.get('/v2/orders/:orderId', authentication(), orderHistoryValidator.orderDetails,  confirmOrderController.orderDetails); // done
 
 rootRouter.post('/v2/orders/push/oms', confirmOrderController.orderPushToOMS);
 

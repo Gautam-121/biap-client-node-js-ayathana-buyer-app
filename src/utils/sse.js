@@ -11,23 +11,23 @@ function addSSEConnection(messageId, sse) {
 }
 
 function sendSSEResponse(messageId, action, response) {
-    if(!SSE_CONNECTIONS?.[messageId]) {
-        console.log("Enter second for not")
-        setTimeout(()=>{
-            SSE_CONNECTIONS?.[messageId]?.send(
-                response,
-                action,
-                messageId
-            );
+    if (!SSE_CONNECTIONS?.[messageId]) {
+        console.log(`[sendSSEResponse] No connection found for messageId: ${messageId}`);
+        const timeoutStartTime = Date.now();
+        
+        setTimeout(() => {
+            if (SSE_CONNECTIONS?.[messageId]) {
+                console.log(`[sendSSEResponse] Sending response after timeout for messageId: ${messageId}`);
+                SSE_CONNECTIONS?.[messageId]?.send(response, action, messageId);
+                const timeoutDuration = Date.now() - timeoutStartTime;
+                console.log(`[sendSSEResponse] Timeout duration: ${timeoutDuration}ms`);
+            } else {
+                console.log(`[sendSSEResponse] No connection found even after timeout for messageId: ${messageId}`);
+            }
         }, process.env.SSE_TIMEOUT);
-    }
-    else {
-        console.log("Enter second for Yes")
-        SSE_CONNECTIONS?.[messageId]?.send(
-            response,
-            action,
-            messageId
-        );
+    } else {
+        console.log(`[sendSSEResponse] Sending response immediately for messageId: ${messageId}`);
+        SSE_CONNECTIONS?.[messageId]?.send(response, action, messageId);
     }
 }
 

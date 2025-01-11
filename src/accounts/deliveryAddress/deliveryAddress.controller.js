@@ -14,7 +14,6 @@ class DeliveryAddressController {
     * @return {callback}
     */
     deliveryAddress(req, res, next) {
-
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             throw new BadRequestParameterError(errors.array()[0].msg);
@@ -23,8 +22,9 @@ class DeliveryAddressController {
         const { body: request, user} = req;
 
         deliveryAddressService.deliveryAddress(request, user).then(response => {
-            res.json(response);
+            res.status(201).json(response);
         }).catch((err) => {
+            console.error('Delivery address creation failed:', err);
             next(err);
         });
     }
@@ -39,10 +39,10 @@ class DeliveryAddressController {
     */
     onDeliveryAddressDetails(req, res, next) {
         const { user } = req;
-
         deliveryAddressService.onDeliveryAddressDetails(user).then(order => {
-            res.json(order);
+            res.status(200).json(order);
         }).catch((err) => {
+            console.error('Failed to fetch delivery addresses:', err);
             next(err);
         });
     }
@@ -55,7 +55,6 @@ class DeliveryAddressController {
     * @return {callback}
     */
     updateDeliveryAddress(req, res, next) {
-
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             throw new BadRequestParameterError(errors.array()[0].msg);
@@ -67,16 +66,16 @@ class DeliveryAddressController {
 
         if(id && id.length)
             deliveryAddressService.updateDeliveryAddress(id, request, uid).then(response => {
-                res.json(response);
-            }).catch((err) => {
-                next(err);
+                res.status(200).json(response);
+                }).catch((err) => {
+                    console.error('Failed to update delivery address:', err);
+                    next(err);
             });
         else
             throw new BadRequestParameterError();
     }
 
     deleteDeliveryAddress(req, res, next) {
-
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             throw new BadRequestParameterError(errors.array()[0].msg);
@@ -88,8 +87,9 @@ class DeliveryAddressController {
 
         if(id && id.length)
             deliveryAddressService.deleteDeliveryAddress(id, request, uid).then(response => {
-                res.json(response);
+                res.status(200).json(response);
             }).catch((err) => {
+                console.error('Delete delivery address failed:', err);
                 next(err);
             });
         else

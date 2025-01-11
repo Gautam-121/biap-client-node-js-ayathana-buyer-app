@@ -15,7 +15,6 @@ class InitOrderController {
     */
     initOrder(req, res, next) {
         const { body: orderRequest } = req;
-
         initOrderService.initOrder(orderRequest).then(response => {
             res.json({ ...response });
         }).catch((err) => {
@@ -31,19 +30,9 @@ class InitOrderController {
     * @return {callback}
     */
     initMultipleOrder(req, res, next) {
-
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            const error = [
-                {
-                    status: 400,
-                    error: {
-                        name: "BAD_REQUEST_PARAMETER_ERROR",
-                        message: errors.array()[0].msg
-                    }
-                }
-            ]
-            return res.status(400).json(error)
+            throw new BadRequestParameterError(errors.array()[0].msg);
         }
 
         const { body: orderRequests, user } = req;
@@ -87,6 +76,11 @@ class InitOrderController {
     * @return {callback}
     */
     onInitMultipleOrder(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const { query } = req;
         const { messageIds } = query;
 

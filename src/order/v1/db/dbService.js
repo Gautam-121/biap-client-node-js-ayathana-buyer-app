@@ -28,7 +28,7 @@ const addOrUpdateOrderWithTransactionId = async (transactionId, orderSchema = {}
 const addOrUpdateOrderWithTransactionIdAndProvider = async (transactionId, providerId, orderSchema = {}) => {
 
 
-    // console.log("items------------------->",transactionId,orderSchema.items)
+    console.log("items orderSchema------------------->",orderSchema.paymentType)
     return await OrderMongooseModel.findOneAndUpdate(
         {
             transactionId: transactionId,

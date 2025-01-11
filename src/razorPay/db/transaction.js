@@ -8,31 +8,28 @@ const transactionSchema = new mongoose.Schema({
         required:true,
         default: () => uuid(),
     },
-    amount: {
+    amount: { 
         type:Number,
     },
-    transactionId: {
-        type:String,
-    },
-    paymentType: {
+    transactionId: { 
         type:String,
     },
     date: {
         type:Number,
     },
-    status: {
+    status: { 
         type:String,
     },
-    orderId: {
+    orderId: { 
         type:String,
     },
-    humanReadableID: {
+    humanReadableID: { 
         type:String,
     },
     depositDate: {
         type: Number,
     },
-    payment: {
+    payment: { 
         type: Object,
     }
 },{

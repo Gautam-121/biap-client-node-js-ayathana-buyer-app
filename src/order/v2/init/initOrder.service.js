@@ -12,6 +12,7 @@ const bppInitService = new BppInitService();
 import crypto from 'crypto'
 import { response } from "express";
 import DeliveryAddressMongooseModel from "../../../accounts/deliveryAddress/db/deliveryAddress.js";
+import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 
 class InitOrderService {
 
@@ -52,7 +53,7 @@ class InitOrderService {
      * @param {String} parentOrderId
      */
     async createOrder(response, userId = null, orderRequest) {
-        if ((response?.status && response.status < 400) || !response?.status) {
+        if (response) {
             const provider = orderRequest?.items?.[0]?.provider || {};
 
             console.log("response", orderRequest)
@@ -165,6 +166,8 @@ class InitOrderService {
             // console.log('itemProducts--------response?.context?.bpp_id------->',response?.context?.bpp_id);
             console.log('itemProducts--------response?.context?.bpp_id------->',fulfillment);
 
+            const orderPaymentType = orderRequest.payment.type
+
             await addOrUpdateOrderWithTransactionIdAndProvider(
                 response.context.transaction_id,provider.local_id,
                 {
@@ -177,7 +180,8 @@ class InitOrderService {
                     fulfillments: [ fulfillment ],
                     provider: { ...providerDetails },
                     items:itemProducts ,
-                    offers:orderRequest.offers
+                    offers:orderRequest.offers,
+                    paymentType:"ON-ORDER"
                 }
             );
         }
@@ -278,8 +282,6 @@ class InitOrderService {
 
             console.log("order--->",orderRequest)
 
-
-
             //get bpp_url and check if item is available
             let itemContext={}
             let itemPresent= { default: true }
@@ -299,11 +301,11 @@ class InitOrderService {
                     const checkQuantity = validateQuantity(items , item)
                     
                     if(checkQuantity?.status==400){
-                        return checkQuantity
+                        throw new BadRequestParameterError(checkQuantity?.error?.message)
                     }
     
                     if(item?.customizations && item.customizations.length > 0 && items?.customisation_items?.length == 0){
-                        return { status: 400 , error: { message: `No custumaztion available for item:${item?.itemId}`} }
+                        throw new BadRequestParameterError(`No custumaztion available for item:${item?.itemId}`)
                     }
     
                     let matchedItems = []
@@ -314,7 +316,7 @@ class InitOrderService {
                         const validationResult = validator.validateAddToCartRequest(item , items);
 
                         if (validationResult!==null && !validationResult.isValid) {
-                            return { status: 400 , error: { message: validationResult.errors?.[0]} }
+                            throw new BadRequestParameterError(validationResult.errors?.[0])
                         }
                         
                         const errors = item.customizations.map(({ groupId, choiceId }) => {
@@ -335,7 +337,7 @@ class InitOrderService {
                         .filter(error => error !== null);
     
                         if(errors.length > 0){
-                            return { status: 400 , error: { message: errors[0]} }
+                            throw new BadRequestParameterError(errors[0])
                         }
                     }
     
@@ -366,10 +368,8 @@ class InitOrderService {
             }
 
             if(!itemPresent?.default){
-                return {
-                    status: 404,
-                    error: { name: "NO_RECORD_FOUND_ERROR" , message: `item not found with id:${itemPresent.itemId}` }
-                }
+                throw new NoRecordFoundError(`item not found with id:${itemPresent.itemId}`)
+
             }
 
 
@@ -387,27 +387,16 @@ class InitOrderService {
             });
 
             if (!(order?.items?.length)) {
-                return {
-                    context,
-                    error: { message: "Empty order received" }
-                };
+                throw new BadRequestParameterError("Empty order received")
             }
             else if (this.areMultipleBppItemsSelected(order?.items)) {
-                return {
-                    context,
-                    error: { message: "More than one BPP's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one BPP's item(s) selected/initialized")
             }
             else if (this.areMultipleProviderItemsSelected(order?.items)) {
-                return {
-                    context,
-                    error: { message: "More than one Provider's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one Provider's item(s) selected/initialized")
             }
             else if (this.areMultipleDomainItemsSelected(order?.items)) {
-                return { 
-                    error: { message: "More than one Domains's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one Domains's item(s) selected/initialized")
             }
 
             const bppResponse = await bppInitService.init(
@@ -419,6 +408,10 @@ class InitOrderService {
             return bppResponse;
         }
         catch (err) {
+            console.log("error in initOrder---->",err)
+            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
+                throw err
+            }
             throw err;
         }
     }
@@ -431,24 +424,18 @@ class InitOrderService {
     async initMultipleOrder(orders, user) {
 
         console.log("orders------->",orders)
-
         // Find the existing delivery address by its ID
         let storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne({ id: orders?.[0]?.message?.delivery_info?.id , userId: user.decodedToken.uid })
             
         if (!storedDeliveryAddress) {
-            return [
-                {
-                    status: 404,
-                    error: { message: `Delivery address not found with id:${orders?.[0]?.message?.delivery_info?.id}` }
-                }
-            ]
+            throw new BadRequestParameterError(`Delivery address not found with id:${orders?.[0]?.message?.delivery_info?.id}`)
         }
 
         const initOrderResponse = await Promise.all(
             orders.map(async order => {
                 try {
                     console.log("orders---pre---->",order)
-                    order = {
+                    const transformedOrder = {
                         context: {
                             city: order?.context?.city,
                             domain: order?.context?.domain,
@@ -513,21 +500,24 @@ class InitOrderService {
                                 }
                             },
                             payment: {
-                                type: order?.payment?.type,
+                                type: order?.payment?.type
                             }
                         }
                     }
                     
-                    const bppResponse = await this.initOrder(order, orders.length > 1);
+                    const bppResponse = await this.initOrder(transformedOrder, orders.length > 1);
 
                     if(bppResponse?.error && Object.keys(bppResponse?.error).length == 0){
                         return bppResponse
                     }
-                    await this.createOrder(bppResponse, user?.decodedToken?.uid, order?.message);
+                    await this.createOrder(bppResponse, user?.decodedToken?.uid, transformedOrder?.message);
                     return bppResponse;
                 }
                 catch (err) {
-                    console.log("err", err)
+                    if(err instanceof BadRequestParameterError){
+                        throw new err
+                    }
+                    console.error("Order processing error:", err);
                     return err
                 }
 

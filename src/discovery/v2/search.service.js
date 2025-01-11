@@ -1093,81 +1093,98 @@ class SearchService {
 
   async getAttributes(searchRequest) {
     try {
-      let matchQuery = [];
+        let matchQuery = [];
   
-      if (searchRequest.category) {
-        matchQuery.push({
-          match: {
-            "item_details.category_id": searchRequest.category,
-          },
-        });
-      }
-      matchQuery.push({
-        match: {
-          "item_details.time.label": 'enable',
-        },
-      });
-      matchQuery.push({
-        terms: {
-          "location_details.time.label": ['enable','open'],
-        },
-      });
-      matchQuery.push({
-        match: {
-          "provider_details.time.label": 'enable',
-        },
-      });
-      matchQuery.push({
-        match: {
-          "type": 'item',
-        },
-      })
-  
-      if (searchRequest.provider) {
-        matchQuery.push({
-          match: {
-            "provider_details.id": searchRequest.providerId,
-          },
-        });
-      }
-  
-      const response = await client.search({
-        index: 'items',
-        size: 0, // We don't need actual documents, only aggregation results
-        body: {
-          query: {
-            bool: {
-              must: matchQuery
-            }
-          },
-          aggs: {
-            unique_attribute_keys: {
-              nested: {
-                path: 'attribute_key_values'
-              },
-              aggs: {
-                unique_keys: {
-                  terms: {
-                    field: 'attribute_key_values.key',
-                    size: 1000  // Adjust the size as needed
-                  }
-                }
-              }
-            }
-          }
+        if (searchRequest.category) {
+            matchQuery.push({
+                match: {
+                    "item_details.category_id": searchRequest.category,
+                },
+            });
         }
-      });
-  
-      const uniqueKeys = response.aggregations.unique_attribute_keys.unique_keys.buckets.map((bucket) =>  { return {code:bucket.key}});
-      console.log(uniqueKeys);
+        matchQuery.push({
+            match: {
+                "item_details.time.label": 'enable',
+            },
+        });
+        matchQuery.push({
+            terms: {
+                "location_details.time.label": ['enable', 'open'],
+            },
+        });
+        matchQuery.push({
+            match: {
+                "provider_details.time.label": 'enable',
+            },
+        });
+        matchQuery.push({
+            match: {
+                "type": 'item',
+            },
+        });
 
-      return { response: { data: uniqueKeys, count: uniqueKeys.length, pages: 1 } };
-      
+        if (searchRequest.provider) {
+            matchQuery.push({
+                match: {
+                    "provider_details.id": searchRequest.providerId,
+                },
+            });
+        }
+
+        const pageSize = searchRequest.limit || 10; // Default to 10 if not provided
+        const page = searchRequest.page || 1; // Default to 1 if not provided
+        const from = (page - 1) * limit; // Calculate the starting point for pagination
+
+        const response = await client.search({
+            index: 'items',
+            size: 0, // We don't need actual documents, only aggregation results
+            body: {
+                query: {
+                    bool: {
+                        must: matchQuery
+                    }
+                },
+                aggs: {
+                    unique_attribute_keys: {
+                        nested: {
+                            path: 'attribute_key_values'
+                        },
+                        aggs: {
+                            paginated_keys: {
+                                composite: {
+                                    size: pageSize,
+                                    sources: [
+                                        { key: { terms: { field: 'attribute_key_values.key' } } }
+                                    ],
+                                    after: searchRequest.afterKey ? { key: searchRequest.afterKey } : undefined
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const buckets = response.aggregations.unique_attribute_keys.paginated_keys.buckets;
+        const uniqueKeys = buckets.map((bucket) => { return { code: bucket.key.key }; });
+
+        // Get the 'after_key' for the next page, if available
+        const afterKey = response.aggregations.unique_attribute_keys.paginated_keys.after_key || null;
+
+        return {
+            response: {
+                data: uniqueKeys,
+                count: uniqueKeys.length,
+                pages: Math.ceil(uniqueKeys.length / pageSize),
+                afterKey
+            }
+        };
 
     } catch (err) {
-      throw err;
+        throw err;
     }
-  }
+}
+
 
   async getUniqueCategories(searchRequest, targetLanguage = "en") {
     try {

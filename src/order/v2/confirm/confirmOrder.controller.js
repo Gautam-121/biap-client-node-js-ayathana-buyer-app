@@ -88,6 +88,11 @@ class ConfirmOrderController {
     }
 
     orderDetails(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const { params , user} = req;
         const { orderId } = params;
 

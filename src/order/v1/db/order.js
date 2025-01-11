@@ -342,6 +342,7 @@ const OrderSchema = new mongoose.Schema(
         messageId: { type: String },
         parentOrderId: { type: String },
         paymentStatus: { type: String, enum: ['PAID', 'NOT-PAID'], default: null },
+        paymentType: { type: String, enum: ['ON-ORDER', 'PRE-FULFILLMENT', 'ON-FULFILLMENT', 'POST-FULFILLMENT'], default: "ON-ORDER" },
         bppId: { type: String },
         bpp_uri: { type: String },
         bapOrderId: { type: String },

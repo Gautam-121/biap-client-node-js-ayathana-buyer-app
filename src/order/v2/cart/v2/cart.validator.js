@@ -270,6 +270,22 @@ export const validateUpdateItemCart = [
     body('customizations.*.choiceId')
         .if(body('customizations').exists())
         .notEmpty().withMessage('choiceId is required in each customization'),
+    body('customizations').custom((customizations, { req }) => {
+            if (!customizations) return true;
+            
+            const seen = new Set();
+    
+            for (const cust of customizations) {
+                // Check for duplicates
+                const key = `${cust.groupId}_${cust.choiceId}`;
+                if (seen.has(key)) {
+                    throw new Error(`Duplicate selection found: ${cust.choiceId} in group ${cust.groupId}`);
+                }
+                seen.add(key);
+            }
+
+            return true;
+        }),
     param('itemId')
         .isMongoId()
         .withMessage('Invalid cartItemId: must be a valid ObjectId'),

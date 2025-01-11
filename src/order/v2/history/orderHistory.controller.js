@@ -17,20 +17,11 @@ class OrderHistoryController {
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            const error = [
-                {
-                    status: 400,
-                    error: {
-                        name: "BAD_REQUEST_PARAMETER_ERROR",
-                        message: errors.array()[0].msg
-                    }
-                }
-            ]
-            return res.status(400).json(error)
+            throw new BadRequestParameterError(errors.array()[0].msg);
         }
 
-        const { query = {}, user } = req;
 
+        const { query = {}, user } = req;
         const { pageNumber = 1 } = query;
 
         if(pageNumber > 0) {

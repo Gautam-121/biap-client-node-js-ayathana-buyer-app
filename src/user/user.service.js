@@ -9,6 +9,15 @@ import NoRecordFoundError from '../lib/errors/no-record-found.error.js';
 import BadRequestParameterError from '../lib/errors/bad-request-parameter.error.js';
 import { NOTIFICATION_CHANNELS } from '../utils/constants.js';
 import EmailService from '../utils/email/email.service.js';
+import UnauthenticatedError from '../lib/errors/unauthenticated.error.js';
+import UnauthorisedError from '../lib/errors/unauthorised.error.js';
+import { createPublicKey } from "crypto"
+import mongoose from "mongoose"
+import DeliveryAddressMongooseModel from '../accounts/deliveryAddress/db/deliveryAddress.js';
+import Interest from './db/interest.js';
+import Cart from '../order/v2/db/cart.js'
+import CartItem from '../order/v2/db/items.js'
+import OTP from './db/otp.js';
 
 const emailService = new EmailService();
 
@@ -17,39 +26,88 @@ class UserService {
         this.KALEYRA_SID = process.env.KALEYRA_SID || 'HXAP1693668585IN';
         this.KALEYRA_API_KEY = process.env.KALEYRA_API_KEY || 'A9519e83851564e6223ed07308f90c7a3';
         this.KALEYRA_URL = process.env.KALEYRA_URL || 'https://api.kaleyra.io/v1';
-        this.KALEYRA_FLOW_ID = process.env.KALEYRA_FLOW_ID || '43d2cba7-106e-426b-a1a3-a883153f6842';
+        this.KALEYRA_FLOW_ID = process.env.KALEYRA_FLOW_ID || 'ff5b5f2c-7099-4678-abb0-737f1602fc09';
+        this.SENDER_ID = process.env.SENDER_ID || "KLRHXA"
         this.JWT_SECRET = process.env.JWT_SECRET || 'your_access_token_secret';
         this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
         this.APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID || 'your_apple_client_id';
         this.APPLE_TEAM_ID = process.env.APPLE_TEAM_ID || 'your_apple_team_id';
         this.APPLE_KEY_ID = process.env.APPLE_KEY_ID || 'your_apple_key_id';
         this.APPLE_PRIVATE_KEY = process.env.APPLE_PRIVATE_KEY || 'your_apple_private_key'; // Your private key from Apple
+        this.MAX_TOKENS_PER_USER = process.env.MAX_TOKENS_PER_USER || 5;
     }
 
     // Helper Methods
     sanitizeUser(user) {
         const userObject = user.toObject();
-        delete userObject.password;
-        delete userObject?.fcmTokens;
+        delete userObject?.password;
+        delete userObject?.pendingPhone
         delete userObject?.isEmailVerified
+        delete userObject?.fcmTokens;
         delete userObject?.providerId
         delete userObject?.verifyId
         delete userObject?.resetPasswordId
+        delete userObject?.smsOtp
+        delete userObject?.smsOtpExpire
+        delete userObject?.resetPasswordOTP
+        delete userObject?.resetPasswordExpires
+        delete userObject?.lastPasswordResetAttempt
+        delete userObject?.passwordResetAttempts
+        delete userObject?.blockedUntil
+        delete userObject?.lastVerificationAttempt
+        delete userObject?.canRecover
+        delete userObject?.recoveryToken
+        delete userObject?.recoveryTokenExpires
+        delete userObject?.deletedAt
+        delete userObject?.isFirstLogin
+        delete userObject?.["__v"]
+
         return userObject;
     }
 
+    generateInviteCode() {
+        const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const length = 8; // Length of the random part of the invite code
+        let code = "";
+    
+        for (let i = 0; i < length; i++) {
+            const randomIndex = Math.floor(Math.random() * charset.length);
+            code += charset[randomIndex];
+        }
+    
+        // Append a timestamp for additional uniqueness
+        const timestamp = Date.now().toString(36); // Convert to base-36
+        return `${code}${timestamp}`;
+    }
+
     // Add this helper method for sending emails with kaleyra api
-    async sendEmail(request) {
+    async sendOtp(phone, user, isResend = false) {
         try {
+            // Check for rate limiting
+            // if (user.verifyId && isResend) {
+            //     const RATE_LIMIT_DURATION = 60000; // 1 minute
+            //     if (user.lastVerificationAttempt) {
+            //         console.log("lastVerificationAttempt" , user.lastVerificationAttempt)
+            //         const timeSinceLastAttempt = Date.now() - new Date(user.lastVerificationAttempt).getTime();
+            //         console.log("timeSinceLastAttempt" , timeSinceLastAttempt , RATE_LIMIT_DURATION)
+            //         if (timeSinceLastAttempt < RATE_LIMIT_DURATION) {
+            //             const remainingTime = Math.ceil((RATE_LIMIT_DURATION - timeSinceLastAttempt) / 1000);
+            //             throw new BadRequestParameterError(
+            //                 `Please wait ${remainingTime} seconds before requesting another verification email`
+            //             );
+            //         }
+            //     }
+            // }
+
             // Generate a verification ID using Kaleyra
             const response = await axios.post(
                 `${this.KALEYRA_URL}/${this.KALEYRA_SID}/verify`,
                 {
                     flow_id: this.KALEYRA_FLOW_ID,
                     to: {
-                        mobile: request.phone,
-                        email: request.email
+                        mobile: `+91${phone}`
                     }
+
                 },
                 {
                     headers: {
@@ -59,14 +117,68 @@ class UserService {
                 }
             );
 
-            return response;
+            console.log("Reseponse", response)
+
+            // Handle successful response
+            if (response && response.data?.data?.verify_id) {
+                // user.verifyId = response.data.data.verify_id;
+                // user.lastVerificationAttempt = new Date();
+                // await user.save();
+
+                return {
+                    success: true,
+                    verifyId: response.data.data.verify_id,
+                    message: 'Verification OTP sent successfully'
+                };
+            }
+
+            // Handle unexpected response format
+            return {
+                success: false,
+                error: response?.error?.message || 'Failed to send verification email'
+            }
+
         } catch (error) {
-            throw new Error(error.message || 'Failed to send email');
+
+            // Axios error with response
+            if (error.response) {
+                console.error('Verification API Error:', {
+                    status: error?.response?.status,
+                    data: error?.response?.data
+                });
+
+                // Extract specific error message from API response
+                const apiErrorMessage = error?.response?.data?.error?.message
+                    || error?.response?.data?.message
+                    || 'Failed to send verification email';
+
+                return {
+                    success: false,
+                    status: error?.response?.status,
+                    message: apiErrorMessage
+                };
+            }
+
+            // Network or request setup errors
+            if (error.request) {
+                console.error('No response received:', error.request);
+                return {
+                    success: false,
+                    message: 'No response from verification service'
+                };
+            }
+
+            // Other unexpected errors
+            console.error('Unexpected error in sendEmail:', error);
+            return {
+                success: false,
+                message: error.message || 'Unexpected error sending verification email'
+            };
         }
     }
 
     // Add this helper method to verify email otp with kaleyra api
-    async verifyEmailOtp(verifyId, otp) {
+    async verifyOtp(verifyId, otp) {
         try {
 
             const response = await axios.post(
@@ -83,58 +195,49 @@ class UserService {
                 }
             );
 
-            return response;
-        } catch (error) {
-            throw new Error(error.message || 'Failed to verify email otp');
-        }
-    }
-
-    async sendPhoneVerificationOtp(request) {
-        try {
-            // Generate a verification ID using Kaleyra
-            const response = await axios.post(
-                `${this.KALEYRA_URL}/${this.KALEYRA_SID}/verify`,
-                {
-                    flow_id: this.KALEYRA_FLOW_ID,
-                    to: {
-                        mobile: request.phone,
-                    }
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'api-key': this.KALEYRA_API_KEY
-                    }
+            if (response && response?.data?.data?.verify_id) {
+                return {
+                    success: true,
+                    data: response?.data?.data
                 }
-            );
+            }
 
-            return response;
+            return {
+                success: false,
+                message: "Verify OTP Failed"
+            }
+
         } catch (error) {
-            throw new Error(error.message || 'Failed to send email');
-        }
-    }
+            // Check if it's an Axios error with a response
+            if (error.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                console.error("API Error Response:", error.response.data);
+                console.error("Status Code:", error.response.status);
 
-    // Add this helper method to verify email otp with kaleyra api
-    async verifyPhoneVerificationOtp(verifyId, otp) {
-        try {
-
-            const response = await axios.post(
-                `${this.KALEYRA_URL}/${this.KALEYRA_SID}/verify/validate`,
-                {
-                    verify_id: verifyId,
-                    otp: otp
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'api-key': this.KALEYRA_API_KEY
-                    }
+                if (error?.response?.data?.error?.code === 'E912') {
+                    throw new BadRequestParameterError("Invalid OTP")
                 }
-            );
+                else if (error?.response?.data?.error?.code === 'E913') {
+                    throw new BadRequestParameterError("The OTP has already expired")
+                }
+                else {
+                    throw new Error('Verify OTP Failed');
+                }
 
-            return response;
-        } catch (error) {
-            throw new Error(error.message || 'Failed to verify email otp');
+            } else if (error.request) {
+                // The request was made but no response was received
+                console.error("No response received:", error.request);
+                throw new Error('No response received from the verification service');
+            } else {
+
+                // Something happened in setting up the request that triggered an Error
+                if(error instanceof NoRecordFoundError) throw error
+                else if(error instanceof BadRequestParameterError) throw error
+
+                console.error("Error setting up request:", error.message);
+                throw new Error(`Request setup error: ${error.message}`);
+            }
         }
     }
 
@@ -153,10 +256,10 @@ class UserService {
         try {
             // Get the Apple public keys
             const appleKeys = await this.getApplePublicKeys();
-            
+
             // Decode the token header without verification
             const decodedHeader = jwt.decode(token, { complete: true }).header;
-            
+
             // Find the matching key
             const matchingKey = appleKeys.find(key => key.kid === decodedHeader.kid);
             if (!matchingKey) {
@@ -182,10 +285,10 @@ class UserService {
         }
     }
 
-      // Cleanup invalid tokens
+    // Cleanup invalid tokens
     async cleanupInvalidTokens(failedTokens) {
         try {
-            const invalidTokens = failedTokens.filter(ft => 
+            const invalidTokens = failedTokens.filter(ft =>
                 [
                     'messaging/invalid-registration-token',
                     'messaging/registration-token-not-registered'
@@ -198,11 +301,9 @@ class UserService {
                     { 'fcmTokens.token': { $in: invalidTokens } },
                     { $pull: { fcmTokens: { token: { $in: invalidTokens } } } }
                 );
-
                 // Log cleanup for monitoring
                 console.log(`Cleaned up ${invalidTokens.length} invalid FCM tokens`);
             }
-
         } catch (error) {
             console.error('Failed to cleanup invalid tokens:', error);
             // Don't throw error as this is a cleanup operation
@@ -218,7 +319,7 @@ class UserService {
 
             for (const user of users) {
                 const tokens = user.fcmTokens.map(t => t.token);
-                
+
                 // Test each token
                 const testMessages = tokens.map(token => ({
                     token,
@@ -226,14 +327,14 @@ class UserService {
                 }));
 
                 const responses = await Promise.all(
-                    testMessages.map(msg => 
+                    testMessages.map(msg =>
                         admin.messaging()
                             .send(msg, true) // dry run
                             .catch(error => ({ error }))
                     )
                 );
 
-                const invalidTokens = tokens.filter((token, index) => 
+                const invalidTokens = tokens.filter((token, index) =>
                     responses[index].error
                 );
 
@@ -257,21 +358,26 @@ class UserService {
         }
     }
 
-    generateOTP() {
-        return Math.floor(100000 + Math.random() * 900000).toString();
-    }
-
-    async authenticateWithGoogle(request , deviceInfo) {
+    async authWithGoogle(request, token) {
         try {
 
-            const { token, fcmToken } = request;
-            
+            const { fcmToken } = request;
+
             // Step 1: Verify the Google ID token
             let decodedToken;
             try {
                 decodedToken = await admin.auth().verifyIdToken(token);
-            } catch (error) {
-                throw new BadRequestParameterError('Invalid Google token');
+            }
+            catch (error) {
+                console.log("error", error)
+                if (error.code === 'auth/id-token-expired') {
+                    throw new UnauthenticatedError('Google token has expired')
+                } else if (error.code === 'auth/argument-error') {
+                    throw new BadRequestParameterError('Invalid Google token');
+                } else {
+                    console.error('Unexpected error during token verification:', error);
+                    throw new UnauthenticatedError('Unexpected error during token verification:', error)
+                }
             }
 
             const { uid, email, name, email_verified } = decodedToken;
@@ -279,344 +385,284 @@ class UserService {
             if (!email_verified) {
                 throw new BadRequestParameterError('Google account email is not verified');
             }
-    
-            // Step 2: Check if user exists in the database
-            let user = await UserMongooseModel.findOne({ email: email.trim().toLowerCase()});
 
-            if (user && user.authProvider !== 'google') {
-                throw new ConflictError('Email already registered with', user.authProvider);
+            // Step 2: Check if user exists in the database
+            let user = await UserMongooseModel.findOne({ email: email?.trim()?.toLowerCase() });
+
+            if (user && user.status === "deleted") {
+                throw new UnauthorisedError('Your account has been Deleted. Please contact support.');
             }
 
-            if (!user) {   
+           // Strict separation - Don't allow cross-provider login
+            if (user && user.authProvider !== 'google') {
+                throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
+            }
+
+            if (!user) {
                 // Step 3: If user doesn't exist, create a new one
                 user = await UserMongooseModel.create({
-                    name, 
-                    email, 
-                    authProvider: 'google', 
-                    providerId: uid, 
-                    isEmailVerified: true, 
+                    name: name.trim().replace(/\s+/g, ' '), // Sanitize name, 
+                    email: email.trim().toLocaleLowerCase(),
+                    authProvider: 'google',
+                    providerId: uid,
                     status: 'active',
+                    isEmailVerified: true,
+                    isFirstLogin: false,
+                    registeredAt: new Date(),
                     lastLogin: new Date(),
                     fcmTokens: fcmToken ? [{ token: fcmToken, device: deviceInfo, lastUsed: new Date() }] : []
                 });
             } else {
-                // Step 4: If user exists, update the provider ID and last login time
+                // Step 4: If user exists, update the provider ID and last login time , check there status
                 user.providerId = uid;
                 user.lastLogin = new Date();
-                user.name = name || user.name;
-                user.status = 'active';
-    
-                // Step 5: Update the FCM token if provided
-                if (fcmToken) {
-                    const existingToken = user.fcmTokens.find(t => t.token === fcmToken);
-                    if (!existingToken) {
-                        user.fcmTokens.push({ token: fcmToken, device: deviceInfo, lastUsed: new Date() });
-                    } else {
-                        existingToken.device = deviceInfo;
-                        existingToken.lastUsed = new Date();
-                    }
-                }
-    
+                user.name = name.trim().replace(/\s+/g, ' ') || user.name;
+                // Save user changes
                 await user.save();
             }
-    
+
             // Step 6: Generate access and refresh tokens for the user
-            const { accessToken } = user.generateAccessToken();
-            return { message: 'Sign-in successful', user: this.sanitizeUser(user), accessToken };
+            const accessToken = user.generateAccessToken();
+            return { success: true, message: 'Auth successfull', user: this.sanitizeUser(user) , accessToken  };
 
         } catch (error) {
+
+            if(error instanceof UnauthenticatedError) throw error
+            else if(error instanceof BadRequestParameterError) throw error
+            else if(error instanceof UnauthorisedError) throw error
+            else if(error instanceof ConflictError) throw error
+
+            console.error('Google sign-in error:', error);
             throw error instanceof Error ? error : new Error('Google sign-in failed');
         }
     }
 
-    async register(request, deviceInfo) {
+    async authWithApple(request, identityToken) {
         try {
-            const { name, email, password, phone, fcmToken } = request;
-    
-            // Sanitize and trim the name
-            const sanitizedName = name?.trim().replace(/\s+/g, ' ') || '';
-    
-            // Check if a user with the same email or phone already exists
-            const existingUser = await UserMongooseModel.findOne({ 
-                $or: [{ email: email.trim().toLowerCase() }, { phone: phone.trim() }] 
-            });
-            
-            if (existingUser) {
-                const message = existingUser.email === email.trim().toLowerCase() 
-                    ? 'Email already registered' 
-                    : 'Phone already registered';
-                throw new ConflictError(message);
-            }    
-            // Create a new user with sanitized data
-            const user = await UserMongooseModel.create({
-                name: sanitizedName,
-                email: email.trim().toLowerCase(),
-                password,
-                phone: phone.trim(),
-                fcmTokens: fcmToken ? [{ token: fcmToken, device: deviceInfo }] : [],
-                authProvider: 'email',
-                status: "pending"
-            });
+            const { name, appleId, email: userEmail } = request;
 
-            return {
-                message: 'Registration successful',
-                userId: this.sanitizeUser(user)
-            };
-        } catch (error) {
-            throw new Error(error.message || 'Registration failed');
-        }
-    }
-
-    async login(request, deviceInfo) { 
-        try {
-
-            const { email, password, fcmToken } = request;
-    
-            const user = await UserMongooseModel.findOne({ email: email.trim().toLowerCase() , authProvider: 'email'}).select('+password');
-            if (!user) {
-                throw new NoRecordFoundError('User not found');
-            }
-
-            const isPasswordMatched = await user.isPasswordCompare(password);
-            if (!isPasswordMatched) {
-                throw new BadRequestParameterError('Invalid Email and password');
-            }
-
-            if (!user.isEmailVerified) {
-                throw new BadRequestParameterError('Please verify your Email before logging in');
-            }
-
-            // If FCM token is provided, update the user's device information
-            if (fcmToken) {
-                const existingToken = user.fcmTokens.find(tokenObj => tokenObj.token === fcmToken);
-                if (!existingToken) {
-                    user.fcmTokens.push({ token: fcmToken, device: deviceInfo, lastUsed: new Date() });
-                } else {
-                    existingToken.device = deviceInfo;
-                    existingToken.lastUsed = new Date();
+            // Verify Apple token
+            let decodedToken;
+            try {
+                // decodedToken = await this.verifyAppleToken(identityToken);
+                decodedToken = jwt.decode(identityToken);
+                console.log("decodedToken", decodedToken)
+                if (!decodedToken || !decodedToken.sub) {
+                    throw new BadRequestParameterError('Invalid Token Paylod');
                 }
-                await user.save(); // Save the updated user with the new fcmToken
+            } catch (error) {
+                console.log("Apple error is ", error)
+                switch (error.code) {
+                    case 'TOKEN_EXPIRED':
+                        throw new UnauthenticatedError('Apple token has expired.');
+                    case 'INVALID_TOKEN':
+                        throw new BadRequestParameterError('Invalid Apple authentication token');
+                    case 'VERIFICATION_FAILED':
+                        throw new UnauthenticatedError('Apple token verification failed');
+                    default:
+                        throw new UnauthenticatedError('Invalid or expired Apple token');
+                }
             }
-    
-            const { accessToken } = user.generateAccessToken();
-    
-            return { 
-                message: 'Login successful', 
-                user: this.sanitizeUser(user), 
-                accessToken 
-            };
-        } catch (error) {
-            throw new Error(error.message || 'Login failed');
-        }
-    }
 
-    async sendVerificationEmail(request) {
-        try {
-            const { email } = request;
+            const { sub: appleUserId, email, name: appleName } = decodedToken;
 
-            const user = await UserMongooseModel.findOne({ email : email.trim().toLowerCase() , authProvider: 'email' });
+            if (!email && !userEmail) {
+                throw new BadRequestParameterError('Email is required for Apple sign-in');
+            }
+
+            // Step 2: Check if user exists in the database
+            let user = await UserMongooseModel.findOne({ email: (userEmail && userEmail?.trim?.toLocaleLowerCase()) || email?.trim().toLowerCase() });
+
+            if (user && user.status === "deleted") {
+                throw new UnauthorisedError('Your account has been Deleted. Please contact support.');
+            }
+
+            // Strict separation - Don't allow cross-provider login
+            if (user && user.authProvider !== 'apple') {
+                throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
+            }
+
+            // Step 3: If user doesn't exist, create a new one
             if (!user) {
-                throw new NoRecordFoundError('User not found');
-            }
+                // Note: appleUser might contain firstName and lastName on first sign-in
+                if (!appleName && (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50)) {
+                    throw new BadRequestParameterError('Name is required and must be between 2 and 50 characters');
+                }
 
-            // Check if email is already verified
-            if (user.isEmailVerified) {
-                throw new BadRequestParameterError('Email is already verified');
-            }
+                if (!appleId && !appleUserId) {
+                    throw new BadRequestParameterError("Apple UserId is required")
+                }
 
-            if (!user.phone) {
-                throw new BadRequestParameterError('No phone number found for this user');
-            }
+                const userName = appleName?.name ?
+                    `${appleName.name.firstName || ''} ${appleName.name.lastName || ''}`.trim() :
+                    name?.trim()?.replace(/\s+/g, ' '); // Sanitize name;
 
-            const response = await this.sendEmail(user);
+                user = await UserMongooseModel.create({
+                    name: userName,
+                    email: (userEmail && userEmail?.trim().toLocaleLowerCase()) || email?.trim()?.toLowerCase(),
+                    authProvider: 'apple',
+                    providerId: appleUserId || appleId,
+                    isEmailVerified: true,
+                    status: 'active',
+                    lastLogin: new Date(),
+                    isFirstLogin: false,
+                    fcmTokens: []
+                });
+            } else {
 
-            if (response?.data?.verify_id) {
-                user.verifyId = response.data.verify_id;
+                // Validate name if provided
+                if (name && (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50)) {
+                    throw new BadRequestParameterError('Name must be between 2 and 50 characters');
+                }
+
+                if (!appleId && !appleUserId) {
+                    throw new BadRequestParameterError("Apple UserId is required")
+                }
+
+                user.providerId = appleUserId || appleId;
+                user.lastLogin = new Date();
+                user.authProvider = 'apple'
+                user.name = (name && name?.trim()?.replace(/\s+/g, ' ')) || user.name;
                 await user.save();
-    
-                return {
-                    success: true,
-                    message: 'Verification email sent successfully',
-                };
             }
 
-            throw new Error(response?.error?.message || 'Invalid response from email service');
+            // Step 6: Generate access token for the user
+            const accessToken = user.generateAccessToken();
+            return { success: true , message: 'Auth successfull', user: this.sanitizeUser(user), accessToken };
+
         } catch (error) {
-            throw new Error(error.message || 'Failed to send verification email');
-        }
-    }
-    
-    async verifyEmail(request) {
-        try {
-            const { email , otp } = request
-            
-            const user = await UserMongooseModel.findOne({ email : email.trim().toLowerCase() , authProvider: 'email'});
-            if (!user) {
-                throw new NoRecordFoundError('User not found');
-            }
+            console.error('Apple sign-in error:', error);
+            if(error instanceof UnauthenticatedError) throw error
+            else if(error instanceof BadRequestParameterError) throw error
+            else if(error instanceof UnauthorisedError) throw error
+            else if(error instanceof ConflictError) throw error
 
-            if (!user.verifyId) {
-                throw new BadRequestParameterError('Please request a verification email first');
-            }
 
-            if (user.isEmailVerified) {
-                throw new BadRequestParameterError('Email already verified', 400);
-            }
-
-            const response = await this.verifyEmailOtp(user.verifyId, otp);
-
-            if (response?.error && Object.keys(response?.error).length > 0) {
-                throw new BadRequestParameterError(response.error.message || 'Failed to verify email');
-            }
-
-            user.isEmailVerified = true;
-            user.verifyId = null;
-            user.status = 'active';
-            await user.save();
-
-            return {
-                success: true,
-                message: 'Email verified successfully',
-            };
-        } catch (error) {
-            throw new Error(error.message || 'Email verification failed');
+            throw new Error(error.message || 'Apple sign-in failed');
         }
     }
 
-    async forgotPassword(request) {
+    async authWithPhone(request) {
         try {
-            const { email } = request;
 
-            // Find user and validate
-            const user = await UserMongooseModel.findOne({ 
-                email: email.trim().toLowerCase(),
-                authProvider: 'email' // Only allow password reset for email-based accounts
-            });
-            
-            if (!user) {
-                throw new NoRecordFoundError('User not found');
+            const { phone  } = request;
+            const trimmedPhone = phone.trim()
+
+            let otp = await OTP.findOne({ phone: trimmedPhone })
+
+            if (otp && otp.verifyId) {
+                const RATE_LIMIT_DURATION = 60000; // 1 minute
+                if (otp.lastVerificationAttempt) {
+                    console.log("lastVerificationAttempt", otp.lastVerificationAttempt)
+                    const timeSinceLastAttempt = Date.now() - new Date(otp.lastVerificationAttempt).getTime();
+                    console.log("timeSinceLastAttempt", timeSinceLastAttempt, RATE_LIMIT_DURATION)
+                    if (timeSinceLastAttempt < RATE_LIMIT_DURATION) {
+                        const remainingTime = Math.ceil((RATE_LIMIT_DURATION - timeSinceLastAttempt) / 1000);
+                        throw new BadRequestParameterError(
+                            `Please wait ${remainingTime} seconds before requesting another verification otp`
+                        );
+                    }
+                }
+            }
+            else{
+                otp = new OTP()
             }
 
-            // Generate OTP
-            const otp = this.generateOTP();
-            
-            // Hash the OTP before saving
-            const hashedOTP = await bcrypt.hash(otp, 10);
-            
-            // Save the OTP and expiry
-            user.resetPasswordOTP = hashedOTP;
-            user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-            await user.save();
+            const sendOtp = await this.sendOtp(trimmedPhone);
 
-            // Send OTP email
-            await emailService.sendResetPasswordEmail(user.email, otp, user.name);
+            if (!sendOtp.success) {
+                throw new Error(sendOtp?.message || 'Failed to send verification OTP');
+            }
+
+            otp.phone = trimmedPhone
+            otp.verifyId = sendOtp.verifyId
+            otp.lastVerificationAttempt = new Date();
+            await otp.save()
 
             return {
                 success: true,
-                message: 'OTP has been sent to your email:'+ email
+                message: `Verification OTP sent successfully to ${trimmedPhone}`,
             };
+
         } catch (error) {
-
-            user.resetPasswordOTP = null;
-            user.resetPasswordExpires = null;
-            await user.save({ validate: false });
-
-            console.error('Forgot password error:', error);
-            throw error instanceof Error ? error : new Error('Forgot password request failed');
+            if(error instanceof BadRequestParameterError) throw error
+            console.log("error", error)
+            throw new Error(error.message || "Verification otp send failed")
         }
     }
 
-    async resetPassword(request) {
+    async authWithPhoneVerify(request) {
         try {
-            const { email, otp, newPassword } = request;
 
-            // Find user and validate
-            const user = await UserMongooseModel.findOne({ 
-                email: email.trim().toLowerCase(),
-                authProvider: 'email'
-            });
+            const { phone, otp , fcmToken } = request;
+            const trimmedPhone = phone.trim();
 
-            if (!user) {
-                throw new NoRecordFoundError('User not found');
+            // Verify OTP
+            let otpRecord = await OTP.findOne({ phone: trimmedPhone });
+
+            // Verify ID check
+            if (!otpRecord || !otpRecord.verifyId) {
+                throw new BadRequestParameterError(
+                    `No verification in progress with phone: ${trimmedPhone}. Please request a new verification OTP.`
+                );
             }
 
-            if (!user.resetPasswordOTP) {
-                throw new BadRequestParameterError('No OTP found for this user');
+            // Check OTP expiration
+            const VERIFICATION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+            if (otp.lastVerificationAttempt) {
+                const timeSinceRequest = Date.now() - new Date(otp.lastVerificationAttempt).getTime();
+                if (timeSinceRequest > VERIFICATION_TIMEOUT) {
+                    await OTP.deleteOne({ _id: otpRecord._id });
+                    throw new BadRequestParameterError(
+                        'Verification code has expired. Please request a new verification OTP.'
+                    );
+                }
             }
 
-            if (user.resetPasswordExpires && user.resetPasswordExpires < new Date()) {
-                throw new BadRequestParameterError('OTP expired');
+            const response = await this.verifyOtp(otpRecord.verifyId, otp);
+
+            if (!response.success) {
+                throw new BadRequestParameterError(response.message || "Invalid or expired OTP")
             }
 
-            // Verify the OTP
-            const isValidOTP = await bcrypt.compare(otp, user.resetPasswordOTP);
-            if (!isValidOTP) {
-                throw new BadRequestParameterError('Invalid OTP');
+            await OTP.deleteOne({ _id: otpRecord._id });
+
+            let user = await UserMongooseModel.findOne({phone: trimmedPhone})
+
+            if(!user){
+                user = await UserMongooseModel.create({
+                    phone: trimmedPhone,
+                    status: 'active',
+                    isPhoneVerified: true,
+                    authProvider: "mobile",
+                    fcmTokens: fcmToken ? [{
+                        token: fcmToken,
+                        device: deviceInfo,
+                        lastUsed: new Date()
+                    }] : [],
+                    registeredAt: new Date(),
+                    lastLogin: new Date(),
+                });
+            }
+            else{
+                user.lastLogin = new Date();
+                await user.save()
             }
 
-            // Update password and clear reset fields
-            user.password = newPassword;
-            user.resetPasswordOTP = undefined;
-            user.resetPasswordExpires = undefined;
-            await user.save();
+            const accessToken = await user.generateAccessToken();
 
             return {
                 success: true,
-                message: 'Password has been reset successfully'
+                message: 'Auth successfull',
+                data: this.sanitizeUser(user),
+                accessToken
             };
         } catch (error) {
-            console.error('Reset password error:', error);
-            throw error instanceof Error ? error : new Error('Password reset failed');
-        }
-    }
 
-    async currentUser(request, user) {
-        try {
-            // Extract `uid` from the decoded token
-            const { uid } = user.decodedToken;
-    
-            // Find the user by their unique ID
-            const foundUser = await UserMongooseModel.findById(uid);
-            if (!foundUser) {
-                throw new NoRecordFoundError('User not found');
-            }
-            // Return sanitized user details
-            return {
-                success: true,
-                user: this.sanitizeUser(foundUser)
-            };
-        } catch (error) {
-            // Handle errors more gracefully with custom errors
-            throw new Error(error.message || 'Failed to get user details');
-        }
-    }
-
-    async updateDetails(request, user) {
-        try {
-            const { uid } = user.decodedToken;
-            const { name } = request;
-    
-            if (!name) {
-                throw new BadRequestParameterError('Name is required for update');
-            }
-    
-            const existingUser = await UserMongooseModel.findById(uid);
-            if (!existingUser) {
-                throw new NoRecordFoundError('User not found');
-            }
-    
-            // Update name
-            existingUser.name = name.trim().replace(/\s+/g, ' ');
-    
-            await existingUser.save();
-    
-            return {
-                success: true,
-                message: 'User details updated successfully',
-                user: this.sanitizeUser(existingUser)
-            };
-        } catch (error) {
-            throw error;
+            if(error instanceof NoRecordFoundError) throw error
+            else if(error instanceof BadRequestParameterError) throw error
+            console.error('Phone Auth error', error);
+            throw new Error(error.message || 'Phone Auth failed');
         }
     }
 
@@ -626,224 +672,364 @@ class UserService {
             const { phone } = request;
     
             if (!phone) {
-                throw new BadRequestParameterError('Phone number is required');
+                throw new BadRequestParameterError('Please provide a phone number.');
             }
     
             const trimmedPhone = phone.trim();
-    
             const existingUser = await UserMongooseModel.findById(uid);
+    
             if (!existingUser) {
-                throw new NoRecordFoundError('User not found');
+                throw new NoRecordFoundError('User not found. Please try again.');
             }
     
-            // Case 1: Phone is already verified for this user
+            // Check if the provided phone number is already verified
             if (existingUser.isPhoneVerified && trimmedPhone === existingUser.phone) {
                 return {
                     success: true,
-                    message: 'This phone number is already verified for your account',
+                    message: 'This phone number is already verified for your account.',
                     requiresPhoneVerification: false
                 };
             }
     
-            // Case 2: Check if phone is used by another user
-            const phoneExists = await UserMongooseModel.findOne({ 
-                _id: { $ne: uid }, 
-                phone: trimmedPhone
-            });
-            
-            if (phoneExists) {
-                throw new ConflictError('Phone number already in use');
+            // Ensure the provided phone matches the user's current phone
+            if (trimmedPhone !== existingUser.phone) {
+                throw new BadRequestParameterError('The provided phone number does not match your current account phone number.');
             }
     
-            // Case 3: Current user's existing phone needs verification
-            // Case 4: New phone number needs verification
-            // Both cases handled the same way:
+            // Check for rate limiting
+            let otp = await OTP.findOne({ phone: trimmedPhone });
+            if (otp && otp.verifyId) {
+                const RATE_LIMIT_DURATION = 60000; // 1 minute
+                const timeSinceLastAttempt = Date.now() - new Date(otp.lastVerificationAttempt).getTime();
+                if (timeSinceLastAttempt < RATE_LIMIT_DURATION) {
+                    const remainingTime = Math.ceil((RATE_LIMIT_DURATION - timeSinceLastAttempt) / 1000);
+                    throw new BadRequestParameterError(`Please wait ${remainingTime} seconds before requesting another verification code.`);
+                }
+            } else {
+                otp = new OTP();
+            }
     
-            // Store the phone number temporarily
+            // Send the OTP
+            const sendOtp = await this.sendOtp(trimmedPhone);
+            if (!sendOtp.success) {
+                throw new Error(sendOtp.message || 'Failed to send the verification code. Please try again.');
+            }
+    
+            // Update OTP and user details
+            otp.phone = trimmedPhone;
+            otp.verifyId = sendOtp.verifyId;
+            otp.lastVerificationAttempt = new Date();
             existingUser.pendingPhone = trimmedPhone;
-            
-            // Send verification OTP
-            const response = await this.sendPhoneVerificationOtp({ phone: trimmedPhone });
-
-            if (response?.error && Object.keys(response?.error).length > 0) {
-                throw new BadRequestParameterError('Failed to send verification code');
-            }
     
-            existingUser.phoneVerifyId = response.data.verify_id;
             await existingUser.save();
+            await otp.save();
     
             return {
                 success: true,
-                message: `Verification code sent to ${trimmedPhone}`,
+                message: `A verification code has been sent to ${trimmedPhone}. Please verify to continue.`,
                 requiresPhoneVerification: true
             };
         } catch (error) {
-            throw error;
+            console.error('Error initiating phone update:', error);
+    
+            // Rollback changes if there was an error
+            try {
+                await UserMongooseModel.findByIdAndUpdate(user.decodedToken.uid, {
+                    $unset: {
+                        pendingPhone: "",
+                        verifyId: "",
+                        lastVerificationAttempt: "",
+                    },
+                });
+                console.error("Rolled back temporary phone update values due to an error.");
+            } catch (rollbackError) {
+                console.error("Failed to roll back changes:", rollbackError);
+            }
+    
+            if (error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
+                throw error;
+            }
+    
+            throw new Error('An error occurred while updating your phone number. Please try again later.');
         }
     }
 
     async verifyPhoneVerification(request, user) {
         try {
-            const { otp } = request;
+            const { otp, phone } = request;
             const { uid } = user.decodedToken;
+            const trimmedPhone = phone.trim();
     
+            // Fetch the existing user from the database
             const existingUser = await UserMongooseModel.findById(uid);
             if (!existingUser) {
-                throw new NoRecordFoundError('User not found');
+                throw new NoRecordFoundError('User not found. Please ensure you are logged in with the correct account.');
+            }
+
+            if(existingUser.pendingPhone !== trimmedPhone){
+                throw new BadRequestParameterError("The provided phone number does not match your current account phone number.")
             }
     
-            if (!existingUser.pendingPhone || !existingUser.phoneVerifyId) {
-                throw new BadRequestParameterError('No pending phone verification found');
-            }
-            
-            if(existingUser.isPhoneVerified) {
-                throw new BadRequestParameterError('Phone number already verified');
-            }
-            
-            // Verify OTP
-            const response = await this.verifyPhoneVerificationOtp(existingUser.verifyId, otp);
-            if (response?.error && Object.keys(response?.error).length > 0) {
-                throw new BadRequestParameterError('Invalid verification code');
+            // Fetch the OTP record associated with the phone number
+            const otpRecord = await OTP.findOne({ phone: trimmedPhone });
+            if (!existingUser.pendingPhone || !otpRecord || !otpRecord.verifyId || existingUser.pendingPhone !== trimmedPhone) {
+                throw new BadRequestParameterError(`No pending phone verification found with phone ${trimmedPhone}. Please request a new verification code.`);
             }
     
-            // Update phone number after verification
+            // Check if the OTP has expired
+            const VERIFICATION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+            if (existingUser.lastVerificationAttempt) {
+                const timeSinceRequest = Date.now() - new Date(existingUser.lastVerificationAttempt).getTime();
+                if (timeSinceRequest > VERIFICATION_TIMEOUT) {
+                    await OTP.deleteOne({ _id: otpRecord._id });
+                    throw new BadRequestParameterError('The verification code has expired. Please request a new one.');
+                }
+            }
+    
+            // Verify the OTP
+            const response = await this.verifyOtp(otpRecord.verifyId, otp);
+            if (!response.success) {
+                throw new BadRequestParameterError('Verification failed. Please ensure you entered the correct code.');
+            }
+    
+            // Clean up OTP record after successful verification
+            await OTP.deleteOne({ _id: otpRecord._id });
+    
+            // Update user's phone number and verification status
             existingUser.phone = existingUser.pendingPhone;
             existingUser.pendingPhone = undefined;
-            existingUser.phoneVerifyId = undefined;
             existingUser.isPhoneVerified = true;
+            existingUser.status = "active";
             await existingUser.save();
     
             return {
                 success: true,
-                message: 'Phone number updated and verify successfully',
+                message: 'Your phone number has been successfully updated and verified.',
                 user: this.sanitizeUser(existingUser)
             };
         } catch (error) {
-            throw error;
+            if (error instanceof BadRequestParameterError || error instanceof NoRecordFoundError) {
+                throw error;
+            }
+            console.error('Error while verifying phone number:', error);
+            throw new Error('An unexpected error occurred. Please try again later.');
         }
     }
-    
-    async updatePassword(request, user) {
+
+    async currentUser(request, user) {
         try {
-            const { currentPassword, newPassword, confirmPassword } = request;
+            // Extract `uid` from the decoded token
             const { uid } = user.decodedToken;
-    
-            const existingUser = await UserMongooseModel.findById(uid).select('+password');
-            if (!existingUser) {
+
+            // Find the user by their unique ID
+            const foundUser = await UserMongooseModel.findById(uid);
+            if (!foundUser) {
                 throw new NoRecordFoundError('User not found');
             }
+            // Return sanitized user details
+            return {
+                success: true,
+                message: "User data send successfully",
+                data: this.sanitizeUser(foundUser)
+            };
+        } catch (error) {
+            console.error('Current user retrieval error:', error);
+            if(error instanceof NoRecordFoundError) throw error
+            throw new Error(error.message || 'Failed to get user details');
+        }
+    }
+
+    async updateDetails(request, user) {
+        try {
+            const { uid } = user.decodedToken;
+            const { name, email, phone, gender } = request;
     
-            // Additional check for email-based authentication
-            if (existingUser.authProvider !== 'email') {
-                throw new BadRequestParameterError('Password update is only available for email-based accounts');
+            const existingUser = await UserMongooseModel.findById(uid);
+            if (!existingUser) {
+                throw new NoRecordFoundError('User not found. Please try again.');
             }
     
-            const isPasswordValid = await existingUser.isPasswordCompare(currentPassword);
-            if (!isPasswordValid) {
-                throw new BadRequestParameterError('Current password is incorrect');
+            // First-time profile update checks
+            if (existingUser.isFirstLogin) {
+                if (!name || !email || !gender) {
+                    throw new BadRequestParameterError('Please provide all required fields: name, email, and gender.');
+                }
+    
+                if (existingUser.authProvider !== 'mobile' && email !== existingUser.email) {
+                    throw new BadRequestParameterError(`Your email is linked to your ${existingUser.authProvider} account and cannot be changed here.`);
+                }
             }
     
-            if (newPassword !== confirmPassword) {
-                throw new BadRequestParameterError('Password does not match');
+            // Email update check for non-first-time users
+            if (!existingUser.isFirstLogin && email) {
+
+                if (existingUser.authProvider !== 'mobile' && email !== existingUser.email) {
+                    throw new BadRequestParameterError(`Your email is linked to your ${existingUser.authProvider} account and cannot be changed here.`);
+                }
+
+                const existingEmailUser = await UserMongooseModel.findOne({
+                    email: email.trim().toLowerCase(),
+                    _id: { $ne: uid }
+                });
+    
+                if (existingEmailUser) {
+                    throw new ConflictError('The provided email is already associated with another account.');
+                }
             }
     
-            existingUser.password = newPassword;
+            // Update user details if changes are detected
+            let hasChanges = false;
+    
+            if (name && name.trim().replace(/\s+/g, ' ') !== existingUser.name) {
+                existingUser.name = name.trim().replace(/\s+/g, ' ');
+                hasChanges = true;
+            }
+    
+            if (email && email.trim().toLowerCase() !== existingUser.email) {
+                existingUser.email = email.trim().toLowerCase();
+                hasChanges = true;
+            }
+    
+            if (gender && gender !== existingUser.gender) {
+                existingUser.gender = gender;
+                hasChanges = true;
+            }
+    
+            if (phone && phone.trim() !== existingUser.phone) {
+                const phoneExists = await UserMongooseModel.findOne({
+                    _id: { $ne: uid },
+                    phone: phone.trim()
+                });
+    
+                if (phoneExists) {
+                    throw new ConflictError('This phone number is already registered.Please use a different phone number.');
+                }
+    
+                existingUser.isPhoneVerified = false;
+                existingUser.phone = phone.trim();
+                existingUser.pendingPhone = phone.trim();
+                hasChanges = true;
+            }
+    
+            if (!hasChanges) {
+                return {
+                    success: true,
+                    message: 'No updates were made as the provided details are unchanged.',
+                    data: this.sanitizeUser(existingUser)
+                };
+            }
+    
+            existingUser.updatedAt = new Date();
+            existingUser.isFirstLogin = false
             await existingUser.save();
     
             return {
                 success: true,
-                message: 'Password updated successfully'
+                message: 'User details updated successfully.',
+                data: this.sanitizeUser(existingUser),
             };
         } catch (error) {
-            throw error;
+            console.error('Error updating user details:', error);
+            if (error instanceof UnauthenticatedError || error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
+                throw error;
+            }
+            throw new Error('An error occurred while updating user details. Please try again.');
         }
     }
 
-    async signInWithApple(request, deviceInfo) {
+    async removeAccount(request, user) {
+        let session = null;
         try {
-            const { identityToken, authorizationCode, name, fcmToken } = request;
-
-            // Verify Apple token
-            let decodedToken;
-            try {
-                decodedToken = await this.verifyAppleToken(identityToken);
-            } catch (error) {
-                throw new BadRequestParameterError('Invalid Apple token');
+            // Start transaction
+            session = await mongoose.startSession();
+            session.startTransaction();
+    
+            const userId = user.decodedToken.uid;
+            const existUser = await UserMongooseModel.findById(userId).session(session);
+    
+            if (!existUser) {
+                await session.abortTransaction();
+                session.endSession();
+                throw new NoRecordFoundError("User not found");
             }
-
-            const { sub: appleUserId,email,email_verified,name: appleName } = decodedToken;
-
-            if (!email_verified) {
-                throw new BadRequestParameterError('Apple account email is not verified');
-            }
-
-            if (!email) {
-                throw new BadRequestParameterError('Email is required for Apple sign-in');
-            }
-
-            // Step 2: Check if user exists in the database
-            let user = await UserMongooseModel.findOne({ email });
-
-            if (user && user.authProvider !== 'apple') {
-                throw new ConflictError('Email already registered with different auth provider');
-            }
-            
-            if (!user) {
-                // Step 3: If user doesn't exist, create a new one
-                // Note: appleUser might contain firstName and lastName on first sign-in
-                if(!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50){
-                    throw new BadRequestParameterError('Name must be between 2 and 50 characters');
-                }
-
-                const userName = appleName?.name ? 
-                    `${appleName.name.firstName || ''} ${appleName.name.lastName || ''}`.trim() : 
-                    null;
-
-                user = await UserMongooseModel.create({
-                    name: userName || name,
-                    email,
-                    authProvider: 'apple',
-                    providerId: appleUserId,
-                    isEmailVerified: true,
-                    status: 'active',
-                    lastLogin: new Date(),
-                    fcmTokens: fcmToken ? [{ token: fcmToken, device: deviceInfo, lastUsed: new Date() }] : []
-                });
-            } else {
-                // Step 4: If user exists, update the provider ID and last login time
-                user.providerId = appleUserId;
-                user.lastLogin = new Date();
-                user.status = 'active';
-
-                if(name && (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50)){
-                    throw new BadRequestParameterError('Name must be between 2 and 50 characters');
-                }
-
-                // Update name if provided and user doesn't have one
-                if (name && !user.name) {
-                    user.name = name;
-                }
-
-                // Step 5: Update the FCM token if provided
-                if (fcmToken) {
-                    const existingToken = user.fcmTokens.find(t => t.token === fcmToken);
-                    if (!existingToken) {
-                        user.fcmTokens.push({ token: fcmToken, device: deviceInfo, lastUsed: new Date() });
-                    } else {
-                        existingToken.device = deviceInfo;
-                        existingToken.lastUsed = new Date();
-                    }
-                }
-
-                await user.save();
-            }
-
-            // Step 6: Generate access token for the user
-            const { accessToken } = user.generateAccessToken();
-            return { message: 'Sign-in successful', user: this.sanitizeUser(user), accessToken };
-
+    
+            // Find cart with session
+            const cartId = await Cart.findOne({ userId }).session(session);
+    
+            // Remove sensitive data with consistent session syntax
+            await Promise.all([
+                DeliveryAddressMongooseModel.deleteMany({ userId }).session(session),
+                Cart.deleteMany({ userId }).session(session),
+                CartItem.deleteMany({ cart: cartId?._id }).session(session),
+                Interest.deleteMany({ 
+                    $or: [
+                        { email: existUser.email }, 
+                        { phone: existUser.phone }
+                    ] 
+                }).session(session)
+            ]);
+    
+            // Delete user account with session
+            await UserMongooseModel.findByIdAndDelete(userId).session(session);
+    
+            // Commit the transaction
+            await session.commitTransaction();
+            session.endSession();
+    
+            return {
+                success: true,
+                message: 'Account successfully deleted',
+                deletionDate: new Date()
+            };
+    
         } catch (error) {
-            throw new Error(error.message || 'Apple sign-in failed');
+            // Abort transaction on error
+            if (session) {
+                await session.abortTransaction();
+                session.endSession();
+            }
+    
+            if (error instanceof NoRecordFoundError) throw error;
+            console.error("Failed to remove user Account", error);
+            throw new Error("Error deleting account. Please try again later");
+        }
+    }
+
+    async updateFcmToken(request, deviceInfo, user) {
+        try {
+            const { fcmToken } = request;
+            const { uid } = user.decodedToken;
+
+            const currentUser = await UserMongooseModel.findById(uid);
+            if (!currentUser) {
+                throw new NoRecordFoundError('User not found');
+            }
+
+            // Limit the number of tokens per user (optional)
+            if (currentUser.fcmTokens.length >= this.MAX_TOKENS_PER_USER) {
+                // Remove oldest token
+                currentUser.fcmTokens.sort((a, b) => b.lastUsed - a.lastUsed);
+                currentUser.fcmTokens.pop();
+            }
+
+            const existingToken = currentUser.fcmTokens.find(t => t.token === fcmToken);
+            if (!existingToken) {
+                currentUser.fcmTokens.push({ token: fcmToken, device: deviceInfo, lastUsed: new Date() });
+            } else {
+                existingToken.device = deviceInfo;
+                existingToken.lastUsed = new Date();
+            }
+
+            await currentUser.save();
+
+            return {
+                success: true,
+                message: 'FCM token updated successfully'
+            };
+        } catch (error) {
+            console.error('Update FCM token error:', error);
+            if(error instanceof NoRecordFoundError) throw error
+            throw new Error(error.message || 'Failed to update FCM token');
         }
     }
 
@@ -904,7 +1090,7 @@ class UserService {
                 }
             });
 
-             // Clean up failed tokens
+            // Clean up failed tokens
             if (failedTokens.length > 0) {
                 await this.cleanupInvalidTokens(failedTokens);
             }
@@ -916,46 +1102,175 @@ class UserService {
                 failedTokens
             };
         } catch (error) {
-            throw new Error(error.message || 'Failed to send push notification');
+            console.error('Failed to send push notification:', error);
         }
     }
 
-    async updateFcmToken(request, deviceInfo, user) {
+    async inviteForm(request, user) {
         try {
-            const { fcmToken } = request;
-            const { uid } = user.decodedToken;
+            const { name, email  } = request
+            const sanitizedName = name.trim().replace(/\s+/g, ' ')
+            const sanitizedEmail = email.trim().toLowerCase()
 
-            const currentUser = await UserMongooseModel.findById(uid);
-            if (!currentUser) {
-                throw new NoRecordFoundError('User not found');
+            const existingInterestForm = await Interest.findOne({email: sanitizedEmail})
+
+            if (existingInterestForm) {
+                throw new ConflictError(`Invite request already exist with email:${email}`)
             }
 
-            // Limit the number of tokens per user (optional)
-            const MAX_TOKENS = 5; // Adjust as needed
-            if (currentUser.fcmTokens.length >= MAX_TOKENS) {
-                // Remove oldest token
-                currentUser.fcmTokens.sort((a, b) => b.lastUsed - a.lastUsed);
-                currentUser.fcmTokens.pop();
-            }
-
-            const existingToken = currentUser.fcmTokens.find(t => t.token === fcmToken);
-            if (!existingToken) {
-                currentUser.fcmTokens.push({ token: fcmToken, device: deviceInfo, lastUsed: new Date() });
-            } else {
-                existingToken.device = deviceInfo;
-                existingToken.lastUsed = new Date();
-            }
-
-            await currentUser.save();
+            const interest = await Interest.create({
+                name: sanitizedName,
+                email: sanitizedEmail,
+            })
 
             return {
                 success: true,
-                message: 'FCM token updated successfully'
-            };
+                message: "Interest form submitted successfully",
+                interest: interest
+            }
         } catch (error) {
-            throw new Error(error.message || 'Failed to update FCM token');
+
+            if (error instanceof ConflictError) {
+                // Re-throw the ConflictError to be handled by the middleware or controller
+                throw error;
+            }
+
+            console.error('Interest form error:', error);
+            throw new Error(error.message || "Error Processing interest form")
         }
     }
+
+    async checkInvitedUser(request) {
+        try {
+            const { email } = request;
+    
+            const invite = await Interest.findOne({ email: email });
+    
+            if (!invite) {
+                throw new NoRecordFoundError(`No invitation found for the provided email: ${email}`);
+            }
+    
+            return {
+                success: true,
+                message: `An invitation exists for the email: ${email}`,
+                data: {
+                    _id: invite._id,
+                    name: invite.name,
+                    email: invite.email,
+                    status: invite.status,
+                    createdAt: invite.createdAt,
+                    "__v": invite["__v"]
+                }
+            };
+    
+        } catch (error) {
+            console.error('Error in checking invitation status:', error);
+            if (error instanceof NoRecordFoundError) throw error;
+    
+            throw new Error('An unexpected error occurred while checking the invitation status. Please try again later.');
+        }
+    }
+    
+    async validateCode(request) {
+        try {
+            const { email, inviteCode } = request;
+    
+            const invite = await Interest.findOne({ email: email,  status: "invited" });
+    
+            if (!invite) {
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}. Please check your invitation details.`);
+            }
+
+            if (invite.inviteCode !== inviteCode) {
+                throw new BadRequestParameterError("The invitation code provided is incorrect. Please double-check the code and try again.");
+            }
+    
+            // Check if the invite code has expired
+            if (invite.inviteExpiry && new Date() > invite.inviteExpiry) {
+                throw new BadRequestParameterError('The invitation code has expired. Please request a new invitation code.');
+            }
+    
+            invite.status = 'registered';
+            await invite.save();
+    
+            return {
+                success: true,
+                message: "The invitation code has been successfully validated."
+            };
+    
+        } catch (error) {
+            console.error('Error in validating invitation code:', error);
+            if (error instanceof NoRecordFoundError) throw error;
+            if (error instanceof BadRequestParameterError) throw error;
+    
+            throw new Error('An unexpected error occurred while validating the invitation code. Please try again later.');
+        }
+    }
+
+    async resendCode(request) {
+        let invite = null; 
+        let previousState = {};
+
+        try {
+            const { email } = request;
+    
+            invite = await Interest.findOne({ email: email,  status: "invited" });
+    
+            if (!invite) {
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}. Please check your invitation details.`);
+            }
+    
+            // Check if the invite code has expired
+            if(invite.inviteExpiry && invite.inviteExpiry > new Date()){
+                throw new BadRequestParameterError( 
+                    `An active invite already exists and has not expired. It will expire on ${invite.inviteExpiry.toLocaleString()}. Please wait until it expires before sending a new invite.`
+                )
+            }
+
+            // Generate Invite Code
+            const inviteCode = this.generateInviteCode();
+
+            // Save the current state of interest for rollback purposes
+            previousState = {
+                status: invite.status,
+                inviteCode: invite.inviteCode,
+                invitedAt: invite.invitedAt,
+                inviteExpiry: invite.inviteExpiry,
+            };
+
+            // Update interest with invite details
+            invite.inviteCode = inviteCode;
+            invite.status = "invited";
+            invite.invitedAt = new Date();
+            invite.inviteExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days expiry
+            await invite.save();
+
+            // Send invite email
+            await emailService.sendInviteEmail(invite.email, invite.name, inviteCode , invite.inviteExpiry );
+
+             return {
+                success: true,
+                message: `Invite sent successfully to ${invite.email}`,
+            };
+    
+        } catch (error) {
+            console.error("Error during sendInvite operation", error);
+            // Rollback changes if any were made
+            if (invite && invite.status === "invited") {
+                try {
+                    Object.assign(invite, previousState);
+                    await invite.save();
+                } catch (rollbackError) {
+                    console.error("Error during rollback operation", rollbackError);
+                }
+            }
+            if (error instanceof NoRecordFoundError) throw error;
+            if (error instanceof BadRequestParameterError) throw error;
+    
+            throw new Error(error.message || "Error while sending invite link");
+        }
+    }
+
 }
 
 export default UserService;

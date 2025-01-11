@@ -1,5 +1,6 @@
 import { onOrderCancel ,onUpdateStatus} from "../../../utils/protocolApis/index.js";
 import { PROTOCOL_CONTEXT } from "../../../utils/constants.js";
+const { parseISO, add, isBefore } = require("date-fns");
 import {
     getOrderById, saveOrderRequest,getOrderRequest,
     addOrUpdateOrderWithdOrderId
@@ -17,13 +18,32 @@ import FulfillmentHistory from "../db/fulfillmentHistory.js";
 import {v4 as uuidv4} from "uuid";
 import Transaction from "../../../razorPay/db/transaction.js";
 import RazorPayService from "../../../razorPay/razorPay.service.js";
+import PhonePeService from "../../../phonePe/phonePe.service.js";
+import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 //import {Payment} from "../models";
 
 
 const razorPayService = new RazorPayService();
 const bppUpdateService = new BppUpdateService();
+const phonePeService = new PhonePeService
 
 class UpdateOrderService {
+
+    // Helper function to parse ISO 8601 durations (e.g., "P7D") into { days } for `date-fns`
+    parseDuration(duration) {
+        const durationRegex = /^P(?:(\d+)D)?$/;
+        const matches = duration.match(durationRegex);
+
+        if (!matches) {
+            throw new BadRequestParameterError(
+                "The return window duration format is invalid. Please check the seller's return policy."
+            );
+        }
+
+        return {
+            days: matches[1] ? parseInt(matches[1], 10) : 0,
+        };
+    }
 
     /**
     * cancel order
@@ -33,11 +53,36 @@ class UpdateOrderService {
         try {
 
 
-            const orderDetails = await getOrderById(orderRequest.message.order.id);
+            const orderDetails = await getOrderById(orderRequest.order.id);
 
             if(orderDetails[0].userId !==user.decodedToken.uid){
                 return []
             }
+
+            if (orderDetails[0].state !== "Completed" && orderRequest?.order?.items[0]?.tags?.update_type === "return") {
+                throw new BadRequestParameterError("The order must be completed before initiating a return.");
+            }
+
+            for(let item of orderRequest.order.item){
+                const data = orderDetails.items.find(product => product.id === item.id)
+
+                if (!data) 
+                    throw new BadRequestParameterError(`The item with ID ${item.id} is not associated with this order.`);
+                
+                if (!data?.product["@ondc/org/returnable"]) {
+                    throw new BadRequestParameterError(`The item with ID ${item.id} is not eligible for return as per seller policy.`);
+                }
+
+                // Parse updatedAt timestamp and calculate return window
+                const updatedAt = parseISO(orderDetails.updatedAt);
+                const returnWindowDuration = data?.product["@ondc/org/return_window"]; // Example: "P7D"
+                const returnWindowDate = add(updatedAt, parseDuration(returnWindowDuration));
+
+                if (isBefore(new Date(), returnWindowDate) === false) {
+                    throw new BadRequestParameterError(`The return window for item ID ${item.id} has expired. Return requests must be made within the allowed timeframe.`);
+                }
+            }
+
 
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
@@ -50,7 +95,15 @@ class UpdateOrderService {
                 domain:orderDetails[0].domain
             });
 
-            orderRequest.context = {...context}
+            orderRequest.context = { ...context };
+            orderRequest.message = {
+                order: {
+                    ...orderRequest.order,
+                    state: orderDetails[0]?.state
+                },
+                update_target: orderRequest?.update_target
+            };
+
             const data = {context:context,data:orderRequest}
 
             let fulfilments = []
@@ -469,14 +522,16 @@ class UpdateOrderService {
                                 let refundAmount = 0;
                                 for(let trail of qouteTrails){
                                     let amount =trail?.list?.find(i=>i.code==='value')?.value??0;
-                                    refundAmount+=parseFloat(amount);
+                                    refundAmount+=Math.abs(parseFloat(amount))
                                 }
-
-                                console.log("amount",refundAmount*-1);
 
                                 //refund details
                                 let settlement_type = "upi"
-                                let txnDetails=await Transaction.findOne({transactionId:protocolUpdateResponse.context.transaction_id});
+                                let txnDetails= await Transaction.findOne({transactionId:protocolUpdateResponse.context.transaction_id});
+
+                                if (!txnDetails) {
+                                    throw new NoRecordFoundError("Transaction Record Not Found");
+                                }
 
                                 console.log("txn details --->",txnDetails)
                                 if(txnDetails){
@@ -485,6 +540,11 @@ class UpdateOrderService {
 
                                 let oldSettlement = await Settlements.findOne({orderId:dbFl.orderId,fulfillmentId:dbFl.id})
                                 if(!oldSettlement){
+
+                                    if(txnDetails.amount < refundAmount){
+                                        throw new BadRequestParameterError("Refund amound is gretaer than initial confirm amount")
+                                    }
+
                                     let settlementContext =  protocolUpdateResponse.context;
                                     let settlementTimeStamp = new Date();
                                     //send update request
@@ -525,7 +585,7 @@ class UpdateOrderService {
                                                                             "settlement_counterparty":"buyer",
                                                                             "settlement_phase":"refund",
                                                                             "settlement_type":settlement_type,
-                                                                            "settlement_amount":`${refundAmount*-1}`, //TODO; fix this post qoute calculation
+                                                                            "settlement_amount":`${refundAmount}`, //TODO; fix this post qoute calculation
                                                                             "settlement_timestamp":settlementTimeStamp
                                                                         }
                                                                     ]
@@ -534,18 +594,25 @@ class UpdateOrderService {
                                             }
                                     }
 
+                                    // Save Settlement details
                                     let newSettlement = await Settlements();
                                     newSettlement.orderId = dbFl.orderId;
                                     newSettlement.settlement = updateRequest;
                                     newSettlement.fulfillmentId = dbFl.id;
                                     await newSettlement.save();
 
-                                    await razorPayService.refundAmount(protocolUpdateResponse.context.transaction_id,refundAmount)
+                                    // Send update request
                                     await bppUpdateService.update(
                                         updateRequest.context,
                                         updateRequest.message,
                                         updateRequest.message
                                     );
+
+                                    // Process refund
+                                    await phonePeService.initiateRefund(
+                                        txnDetails,
+                                        refundAmount
+                                    )
                                 }
                             }
                         }

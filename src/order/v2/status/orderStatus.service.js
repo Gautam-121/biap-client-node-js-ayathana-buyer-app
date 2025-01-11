@@ -16,9 +16,11 @@ import Fulfillments from "../db/fulfillments.js";
 import FulfillmentHistory from "../db/fulfillmentHistory.js";
 import OrderHistory from "../db/orderHistory.js";
 import sendAirtelSingleSms from "../../../utils/sms/smsUtils.js";
+import EmailService from "../../../utils/email/email.service.js";
 const bppOrderStatusService = new BppOrderStatusService();
 const bppUpdateService = new BppUpdateService();
 
+const emailService = new EmailService()
 class OrderStatusService {
 
     /**
@@ -28,8 +30,12 @@ class OrderStatusService {
     async orderStatus(order) {
         try {
 
-            const { context: requestContext, message } = order || {};
 
+            if (!order?.message?.order_id) {
+                throw new Error('Invalid order: missing order_id');
+            }
+
+            const { context: requestContext, message } = order || {};
             const orderDetails = await getOrderById(order.message.order_id);
 
             console.log('domain--------XX------>',orderDetails)
@@ -50,6 +56,7 @@ class OrderStatusService {
             );
         }
         catch (err) {
+            console.error('Error in orderStatus:', err);
             throw err;
         }
     }
@@ -65,14 +72,11 @@ class OrderStatusService {
                 try {
 
                     console.log("order------------------>",order);
-
-
-
                     const orderResponse = await this.orderStatus(order);
                     return orderResponse;
                 }
                 catch (err) {
-                    console.log(err)
+                    console.error('Error processing order:', err);
                     return err;
                 }
             })
@@ -133,14 +137,66 @@ class OrderStatusService {
                             if ((dbResponse && dbResponse.length)) {
                                 const orderSchema = dbResponse?.[0].toJSON();
 
-                                if(orderSchema.state!==onOrderStatusResponse?.message?.order?.state && onOrderStatusResponse?.message?.order?.state ==='Completed'){
-                                    let billingContactPerson = orderSchema.billing.phone
-                                    let provider = orderSchema.provider.descriptor.name
-                                    await sendAirtelSingleSms(billingContactPerson, [provider,'delivered'], 'ORDER_DELIVERED', false)
+                                // if(orderSchema.state!==onOrderStatusResponse?.message?.order?.state && onOrderStatusResponse?.message?.order?.state ==='Completed'){
+                                //     let billingContactPerson = orderSchema.billing.phone
+                                //     let provider = orderSchema.provider.descriptor.name
+                                //     await sendAirtelSingleSms(billingContactPerson, [provider,'delivered'], 'ORDER_DELIVERED', false)
+                                // }
+
+                                //Add notifications for other states
+                                if(orderSchema.state !== onOrderStatusResponse?.message?.order?.state) {
+                                    let billingContactPerson = orderSchema.billing.phone;
+                                    let billingContactPersonEmail = orderSchema.billing.email
+                                    let provider = orderSchema.provider.descriptor.name;
+
+                                    // Helper function to send email notifications using EmailService
+                                    const sendEmailNotification = async (email, subject, message) => {
+                                        try {
+                                            await emailService.sendEmail({
+                                                to: email,
+                                                subject: subject,
+                                                html: `
+                                                    <p>Dear Customer,</p>
+                                                    <p>${message}</p>
+                                                    <p>Thank you for shopping with ${provider}!</p>`,
+                                                metadata: { emailType: subject.toLowerCase().replace(/\s+/g, '_'), recipient: email }
+                                            });
+                                            console.log(`Email notification sent to ${email} for ${subject}`);
+                                        } catch (error) {
+                                            console.error(`Failed to send email to ${email}:`, error.message);
+                                        }
+                                    };
+    
+                                    switch(onOrderStatusResponse?.message?.order?.state) {
+                                        case 'Accepted':
+                                            await sendAirtelSingleSms(billingContactPerson, [provider], 'ORDER_PLACED', false);
+                                            await sendEmailNotification(
+                                                billingContactPersonEmail,
+                                                'Order Placed Confirmation',
+                                                `Your order with OrderId:${orderSchema.id} from ${provider} has been accepted.`
+                                            );
+                                            break;
+                                        case 'Cancelled':
+                                            // Add template for cancelled state
+                                            await sendAirtelSingleSms(billingContactPerson, [provider], 'ORDER_CANCELLED', false);
+                                            await sendEmailNotification(
+                                                billingContactPersonEmail,
+                                                'Order Cancellation Notification',
+                                                `Your order with OrderId:${orderSchema.id} from ${provider} has been cancelled.`
+                                            );
+                                            break;
+                                        case 'Completed':
+                                            await sendAirtelSingleSms(billingContactPerson, [provider,'delivered'], 'ORDER_DELIVERED', false);
+                                            await sendEmailNotification(
+                                                emailRecipient,
+                                                'Order Delivered Notification',
+                                                `Your order with OrderId:${orderSchema.id} from ${provider} has been delivered.`
+                                            );
+                                            break;
+                                    }
                                 }
+
                                 orderSchema.state = onOrderStatusResponse?.message?.order?.state;
-
-
 
                                 orderSchema.fulfillments = onOrderStatusResponse?.message?.order?.fulfillments;
                                 if (onOrderStatusResponse?.message?.order?.quote) {
@@ -237,6 +293,7 @@ class OrderStatusService {
                                     state:onOrderStatusResponse.message.order.state
                                 })
                                 if(!orderHistory){
+
                                     await OrderHistory.create({
                                         orderId:onOrderStatusResponse.message.order.id,
                                         state:onOrderStatusResponse.message.order.state,
@@ -247,6 +304,20 @@ class OrderStatusService {
                                 // console.log("updateItems",updateItems)
                                 let updateItems = []
                                 for(let item of protocolItems){
+
+                                     // Validate required item fields
+                                    if (!item?.id) {
+                                        console.error('Missing item ID in protocol response');
+                                        continue;
+                                    }
+
+                                     // Find matching item from orderSchema
+                                     const existingItem = orderSchema.items.find(element => element.id === item.id);
+                                     if (!existingItem) {
+                                        console.warn(`Item ${item.id} not found in orderSchema - skipping`);
+                                        continue;
+                                    }
+
                                     let updatedItem = {}
                                     //let fulfillmentStatus = await Fulfillments.findOne({id:item.fulfillment_id});
 
@@ -257,13 +328,12 @@ class OrderStatusService {
                                     // console.log("ifulfillmentStatus->",fulfillmentStatus)
                                     let temp1 = onOrderStatusResponse.message?.order?.fulfillments?.find(fulfillment=> fulfillment?.id === item?.fulfillment_id)
 
-                                    if(temp1.type==='Return' || temp1.type==='Cancel' ){
-                                        item.return_status = temp1?.state?.descriptor?.code;
-                                        item.cancellation_status = temp1?.state?.descriptor?.code;
-                                    }else{
-                                        item.return_status = '';
-                                        item.cancellation_status = '';
+                                    if(temp1?.type==='Return' || temp1?.type==='Cancel' || temp1?.type ==="RTO"){
+                                        item.return_status = temp1?.state?.descriptor?.code ? temp1?.state?.descriptor?.code : (item?.return_status || "");
+                                        item.cancellation_status = temp1?.state?.descriptor?.code ? temp1?.state?.descriptor?.code : (item?.cancellation_status || "");
+                                        item.rto_cancellation_status = temp1?.state?.descriptor?.code ? temp1?.state?.descriptor?.code : (item?.rto_cancellation_status || "");
                                     }
+                                    
                                     item.fulfillment_status = temp1?.state?.descriptor?.code??""
                                     // item.return_status = temp1?.state?.descriptor?.code??""
                                     // item.cancellation_status = temp1?.state?.descriptor?.code??""

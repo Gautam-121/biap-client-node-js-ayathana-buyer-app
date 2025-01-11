@@ -8,6 +8,7 @@ import NoRecordFoundError from "../../../lib/errors/no-record-found.error.js";
 import ContextFactory from "../../../factories/ContextFactory.js";
 import BppSelectService from "./bppSelect.service.js";
 import SearchService from "../../../discovery/v2/search.service.js";
+import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 const bppSearchService = new SearchService();
 const bppSelectService = new BppSelectService();
 
@@ -85,11 +86,11 @@ class SelectOrderService {
                     const checkQuantity = validateQuantity(items , item)
 
                     if(checkQuantity?.status==400){
-                        return checkQuantity
+                        throw new BadRequestParameterError(checkQuantity?.error?.message)
                     }
 
                     if(item?.customizations && item.customizations.length > 0 && items?.customisation_items?.length == 0){
-                        return { status: 400 , error: { message: `No custumaztion available for item:${item?.itemId}`} }
+                        throw new BadRequestParameterError(`No custumaztion available for item:${item?.itemId}`)
                     }
     
                     let matchedItems = []
@@ -100,7 +101,7 @@ class SelectOrderService {
                         const validationResult = validator.validateAddToCartRequest(item , items);
 
                         if (validationResult!==null && !validationResult.isValid) {
-                            return { status: 400 , error: { message: validationResult.errors?.[0]} }
+                            throw new BadRequestParameterError(validationResult.errors?.[0])
                         }
                         
                         const errors = item.customizations.map(({ groupId, choiceId }) => {
@@ -121,7 +122,7 @@ class SelectOrderService {
                         .filter(error => error !== null);
     
                         if(errors.length > 0){
-                            return { status: 400 , error: { message: errors[0]} }
+                            throw new BadRequestParameterError(errors[0])
                         }
                     }
     
@@ -152,10 +153,7 @@ class SelectOrderService {
             }
     
             if(!itemPresent?.default){
-                return {
-                    status: 404,
-                    error: { name: "NO_RECORD_FOUND_ERROR" , message: `item not found with id:${itemPresent.itemId}` }
-                }
+                throw new NoRecordFoundError(`item not found with id:${itemPresent.itemId}`)
             }
     
             const contextFactory = new ContextFactory();
@@ -169,25 +167,28 @@ class SelectOrderService {
                 state:requestContext?.state,
                 domain:requestContext?.domain
             });
+
+            fulfillments = fulfillments?.map(fulfillment => ({
+                end:{
+                    location: {
+                        gps: fulfillment?.end?.location?.gps,
+                        address: {
+                            areaCode: fulfillment?.end?.location?.address?.areaCode,
+                        }
+                    },
+                }
+            })) 
     
             if (!(cart?.items || cart?.items?.length)) {
-                return { 
-                    error: { message: "Empty order received" }
-                };
+                throw new BadRequestParameterError("Empty order received")
             } else if (this.areMultipleBppItemsSelected(cart?.items)) {
-                return { 
-                    error: { message: "More than one BPP's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one BPP's item(s) selected/initialized")
             }
             else if (this.areMultipleProviderItemsSelected(cart?.items)) {
-                return { 
-                    error: { message: "More than one Provider's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one Provider's item(s) selected/initialized")
             }
             else if (this.areMultipleDomainItemsSelected(cart?.items)) {
-                return { 
-                    error: { message: "More than one Domains's item(s) selected/initialized" }
-                };
+                throw new BadRequestParameterError("More than one Domains's item(s) selected/initialized")
             }
     
             return await bppSelectService.select(
@@ -196,6 +197,10 @@ class SelectOrderService {
             );
         }
         catch (err) {
+            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
+                throw err
+            }
+            console.error("Error in selectOrder" , err.message)
             throw err;
         }
     }
@@ -210,32 +215,6 @@ class SelectOrderService {
         const selectOrderResponse = await Promise.all(
             requests.map(async request => {
                 try {
-                    request = {
-                        context: {
-                            domain: request?.context?.domain,
-                            city: request?.context?.city,
-                        },
-                        message: {
-                            cart: {
-                                items: request?.message?.cart?.items.map(item => ({
-                                    itemId: item?.itemId,
-                                    quantity: item?.quantity,
-                                    customizations: item?.customizations
-                                })),
-                                offers: request?.message?.offers,
-                                fulfillments: request?.message?.fulfillments.map(fulfillment => ({
-                                    end:{
-                                        location: {
-                                            gps: fulfillment?.end?.location?.gps,
-                                            address: {
-                                                areaCode: fulfillment?.end?.location?.address?.areaCode,
-                                            }
-                                        },
-                                    }
-                                })) 
-                            }
-                        }
-                    }
                     const response = await this.selectOrder(request);
                     return response;
                 }
@@ -297,6 +276,7 @@ class SelectOrderService {
                         return { ...onSelectResponse };
                     }
                     catch (err) {
+                        console.error("Error in onSelectMultipleOrder" , err.message)
                         throw err;
                     }
                 })

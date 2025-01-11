@@ -27,7 +27,7 @@ class RazorPayService
             console.log('[Payment] data......................',data);
 
             let uuid1 = uuid();
-            const intent = await Order.findOne({transactionId:transactionId})
+            const intent = await Order .findOne({transactionId:transactionId})
 
             if (!intent)
                 throw new BadRequestParameterError();
@@ -50,7 +50,7 @@ class RazorPayService
             let lastTransaction = await Transaction.find({}).sort({createdAt:-1}).limit(1)
             let humanReadableID = '';
 
-            if(lastTransaction) {
+            if(lastTransaction ) {
                 const lastHumanReadableID = lastTransaction.humanReadableID;
 
                 if (lastHumanReadableID) {
@@ -275,8 +275,6 @@ class RazorPayService
         {
 
             let order=await Transaction.findOne({transactionId:txnId , status:"TXN_SUCCESS"});
-
-            console.log("refund order" , order)
 
             if(order)
             {

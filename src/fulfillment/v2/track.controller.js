@@ -1,5 +1,6 @@
 import TrackService from './track.service.js';
 import BadRequestParameterError from '../../lib/errors/bad-request-parameter.error.js';
+import {validationResult} from "express-validator"
 
 const trackService = new TrackService();
 
@@ -34,6 +35,11 @@ class TrackController {
     * @return {callback}
     */
     trackMultipleOrder(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+
         const { body: trackRequests } = req;
 
         if (trackRequests && trackRequests.length) {
@@ -76,6 +82,12 @@ class TrackController {
     * @return {callback}
     */
     onTrackMultipleOrder(req, res, next) {
+
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const { query } = req;
         const { messageIds } = query;
         

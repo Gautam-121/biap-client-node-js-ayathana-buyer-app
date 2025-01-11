@@ -4,6 +4,7 @@ import SearchService from "../../../../discovery/v2/search.service.js";
 import CartValidator from './cart.validator.js';
 import NoRecordFoundError from '../../../../lib/errors/no-record-found.error.js';
 import validateQuantity from '../../../../utils/quantity.validator.js';
+import BadRequestParameterError from '../../../../lib/errors/bad-request-parameter.error.js';
 const bppSearchService = new SearchService();
 class CartService {
 
@@ -19,11 +20,11 @@ class CartService {
                 const checkQuantity = validateQuantity(items , data)
 
                 if(checkQuantity?.status==400){
-                    return checkQuantity
+                    throw new BadRequestParameterError(checkQuantity?.error?.message);
                 }
 
             if(items?.customisation_groups.length==0 && items?.customisation_items?.length == 0 && data.customizations?.length>0){
-                return { status: 400, error : {  message: 'No custumzation availabe for item'}}
+                throw new BadRequestParameterError('No custumzation availabe for item');
             }
 
             let validationResult = null;
@@ -34,7 +35,7 @@ class CartService {
             }
 
             if (validationResult!==null && !validationResult.isValid) {
-                return { status: 400 , error: { message: validationResult.errors?.[0]} }
+                throw new BadRequestParameterError(validationResult.errors?.[0]);
             }
 
            let cart = await Cart.findOne({userId:data.userId,location_id:data.location_details?.id});
@@ -88,6 +89,9 @@ class CartService {
 
         }
         catch (err) {
+            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
+                throw err
+            }
             throw err;
         }
     }
@@ -104,21 +108,16 @@ class CartService {
             const checkQuantity = validateQuantity(items , data)
 
             if(checkQuantity?.status==400){
-                return checkQuantity
+                throw new BadRequestParameterError(checkQuantity?.error?.message)
             }
 
             if(items?.customisation_groups.length==0 && items?.customisation_items?.length == 0 && data.customizations?.length>0){
-                return { status: 400, error : {  message: 'No custumzation availabe for item'}}
+                throw new BadRequestParameterError('No custumzation availabe for item')
             }
 
             let cartItem = await CartItem.findOne({_id:data.cartItemId});
             if(!cartItem){
-                return {
-                    status: 404,
-                    error:{
-                        message: "Cart item not found"
-                    }
-                }
+                throw new BadRequestParameterError("Cart item not found")
             }
 
             let validationResult = null;
@@ -150,7 +149,7 @@ class CartService {
             }
 
             if (validationResult!==null && !validationResult.isValid) {
-                return { status: 400 , error: { message: validationResult.errors?.[0]} }
+                throw BadRequestParameterError(validationResult.errors?.[0])
             }
 
              // 7. Prepare update data
@@ -178,6 +177,9 @@ class CartService {
             return  await cartItem.save();
         }
         catch (err) {
+            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
+                throw err
+            }
             throw err;
         }
     }
@@ -186,16 +188,12 @@ class CartService {
         try {
             const result =   await CartItem.deleteOne({_id:data.itemId});
             if(result.deletedCount == 0){
-                return {
-                    status: 404,
-                    error:{
-                        message: "Cart item not found"
-                    }
-                }
+                throw new NoRecordFoundError("Cart item not found")
             }
             return { success: true, message: 'Item removed successfully' };
         }
         catch (err) {
+            if(err instanceof NoRecordFoundError) throw err
             throw err;
         }
     }
@@ -205,12 +203,7 @@ class CartService {
             const cart = await Cart.findOne({userId:data.userId,_id:data.id})
 
             if (!cart) {
-                return {
-                    status: 404,
-                    error:{
-                        message: "Cart not found"
-                    }
-                }
+                throw new BadRequestParameterError("Cart not found")
             }
 
             await Cart.deleteMany({userId:data.userId,_id:data.id})
@@ -219,6 +212,7 @@ class CartService {
             return { success: true, message: 'Cart cleared successfully' };
         }
         catch (err) {
+            if(err instanceof BadRequestParameterError) throw err
             throw err;
         }
     }
@@ -237,6 +231,54 @@ class CartService {
                 return { cartExists: true, items: cartItems };
             }else{
                 return { cartExists: false, items: [] }
+            }
+        }
+        catch (err) {
+            throw err;
+        }
+    }
+
+    async getCartItemMapToShop(data) {
+        try {
+            let query = {userId:data.userId};
+            if(data.location_id){
+                query.location_id=data.location_id
+            }else{
+                query.location_id = { $exists: false };
+            }
+            const cart = await Cart.findOne(query);
+
+            console.log("cartData", cart)
+            if (cart) {
+                const cartItems = await CartItem.find({ cart: cart._id });
+
+                console.log("CartsItems" , cartItems)
+
+                
+                if (cartItems.length === 0) {
+                    return { cartExists: true, items: new Map() }; // Return an empty map for consistency
+                }
+
+                console.log("CartsItems" , cartItems)
+    
+                let map = new Map();
+    
+                for (let cartData of cartItems) {
+                    console.log("CartData" , cartData)
+                    console.log("map" ,map)
+                    if (map.has(cartData?.item?.provider?.id)) {
+                        map.set(cartData?.item?.provider?.id, [...map.get(cartData?.item?.provider?.id), cartData]); // Append to existing array
+                    } else {
+                        map.set(cartData?.item?.provider?.id, [cartData]); // Initialize with an array
+                    }
+                }
+
+                console.log("after map" , map)
+    
+                return { cartExists: true, items: Object.fromEntries(map) };
+                
+            } else {
+                return { cartExists: false, items: new Map() }; // Return an empty map for consistency
             }
         }
         catch (err) {

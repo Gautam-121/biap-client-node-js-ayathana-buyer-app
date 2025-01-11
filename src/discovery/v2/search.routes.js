@@ -47,7 +47,7 @@ router.get(
 
 
 router.get(
-    '/v2/attributes',authentication(),  searchController.getAttributes,
+    '/v2/attributes',authentication(), searchValidator.attributes ,  searchController.getAttributes,
 );
 
 router.get(

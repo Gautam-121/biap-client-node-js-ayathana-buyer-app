@@ -13,6 +13,7 @@ const  Fulfillment = new mongoose.Schema(
         state:{ type: Object },
         start:{ type: Object },
         quote_trail:{ type: Object },
+        tags:{type: Object},
         id:{ type: String }
     },
     { _id: true, timestamps: true }

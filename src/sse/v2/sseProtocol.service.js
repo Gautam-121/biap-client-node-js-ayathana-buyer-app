@@ -185,17 +185,22 @@ class SseProtocol {
     async onQuote(response) {
         try {
             const { messageId } = response;
-
-            console.log("Enter first")
-
+    
+            console.log(`[onQuote] Entered the onQuote method with messageId: ${messageId}`);
+            
+            // Log the time before sending the SSE response
+            const startSSETime = Date.now();
+            console.log(`[onQuote] Sending SSE response for messageId: ${messageId}...`);
+            
             sendSSEResponse(
                 messageId,
                 PROTOCOL_CONTEXT.ON_SELECT,
                 response,
             );
-
-            console.log("Enter Third")
-
+    
+            const sendSSETime = Date.now() - startSSETime;
+            console.log(`[onQuote] Time taken to send SSE response: ${sendSSETime}ms`);
+    
             return {
                 message: {
                     ack: {
@@ -205,6 +210,7 @@ class SseProtocol {
             };
         }
         catch (err) {
+            console.error(`[onQuote] Error in onQuote method:`, err);
             throw err;
         }
     }
@@ -225,6 +231,8 @@ class SseProtocol {
             );
 
             await orderStatusService.onOrderStatusV2([messageId]);
+
+            console.log("Enter after orderStatusService.onOrderStatusV2")
 
             return {
                 message: {

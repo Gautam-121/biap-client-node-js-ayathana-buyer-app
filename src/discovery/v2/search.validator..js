@@ -24,11 +24,24 @@ const discovery = {
         
         query("priceMax")
             .optional()
-            .isFloat({ min: 0 }).withMessage("Maximum price must be a positive number"),
+            .isFloat({ min: 0 }).withMessage("Maximum price must be a positive number.")
+            .custom((value, { req }) => {
+                if (req.query.priceMin && parseFloat(value) < parseFloat(req.query.priceMin)) {
+                    throw new Error("Maximum price must be greater than or equal to minimum price.");
+                }
+                return true;
+            }),
     
         query("rating")
             .optional()
-            .isFloat({ min: 0, max: 5 }).withMessage("Rating must be between 0 and 5"),
+            .matches(/^\d(\.\d{1})?$/).withMessage("Rating must be a single digit or a decimal with one digit after the point (e.g., 1, 2, 4.5).")
+            .custom((value) => {
+                const numericValue = parseFloat(value);
+                if (numericValue < 0 || numericValue > 5) {
+                    throw new Error("Rating must be between 0 and 5.");
+                }
+                return true;
+            }),
     
         query("providerIds")
             .optional()
@@ -40,7 +53,9 @@ const discovery = {
     
         query("name")
             .optional()
-            .isString().withMessage("Name must be a string"),
+            .isString().withMessage("Name must be a valid string.")
+            .trim()
+            .matches(/^[a-zA-Z0-9\s]+$/).withMessage("Name must contain only letters, numbers, and spaces."),
     
         query("sortField")
             .optional()
@@ -63,9 +78,11 @@ const discovery = {
         query('domain')
           .optional()
           .isString().withMessage('Domain must be a string'),
-        query('name')
+        query("name")
           .optional()
-          .isString().withMessage('Name must be a string'),
+          .isString().withMessage("Name must be a valid string.")
+          .trim()
+          .matches(/^[a-zA-Z0-9\s]+$/).withMessage("Name must contain only letters, numbers, and spaces."),
     ],
     providerDetails: [
         query('providerId')
@@ -74,7 +91,16 @@ const discovery = {
         query('locationId')
           .exists().withMessage('locationId is required')
           .isString().withMessage('locationId must be a string'),
-      ]
+      ],
+    attributes: [
+        query("pageNumber")
+            .optional()
+            .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
+
+        query("limit")
+            .optional()
+            .isInt({ min: 1 }).withMessage("Limit must be an integer greater than 0"),
+    ]
 } 
 
 export default discovery

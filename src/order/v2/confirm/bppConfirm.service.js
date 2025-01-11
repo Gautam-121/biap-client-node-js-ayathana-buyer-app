@@ -246,24 +246,24 @@ class BppConfirmService {
                             }
                         }),
                         payment: {
-                            uri:order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ?
+                            uri: (storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                 "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay":
                                 undefined, //In case of pre-paid collection by the buyer app, the payment link is rendered after the buyer app sends ACK for /on_init but before calling /confirm;
-                            tl_method:order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ?
+                            tl_method:(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                 "http/post":
                                 undefined,
                             params: {
-                                amount: order?.payment?.paid_amount?.toFixed(2)?.toString(),
+                                amount: Number(value)?.toFixed(2)?.toString() || order?.payment?.paid_amount?.toFixed(2)?.toString(),
                                 currency: "INR",
-                                transaction_id:order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ?
+                                transaction_id:(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                     order.jusPayTransactionId??uuidv4():
                                     undefined//payment transaction id
                             },
-                            status: order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ?
+                            status:(storedOrder?.paymentType ||  order?.payment?.type)=== PAYMENT_TYPES["ON-ORDER"] ?
                                 PROTOCOL_PAYMENT.PAID :
                                 PROTOCOL_PAYMENT["NOT-PAID"],
-                            type: order?.payment?.type,
-                            collected_by: order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ? 
+                            type: (storedOrder?.paymentType ||  order?.payment?.type),
+                            collected_by: (storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ? 
                                 PAYMENT_COLLECTED_BY.BAP : 
                                 PAYMENT_COLLECTED_BY.BPP,
                             '@ondc/org/buyer_app_finder_fee_type': process.env.BAP_FINDER_FEE_TYPE,
@@ -271,7 +271,7 @@ class BppConfirmService {
                             '@ondc/org/settlement_basis': order.payment['@ondc/org/settlement_basis']??storedOrder?.settlementDetails?.["@ondc/org/settlement_basis"],
                             '@ondc/org/settlement_window': order.payment['@ondc/org/settlement_window']??storedOrder?.settlementDetails?.["@ondc/org/settlement_window"],
                             '@ondc/org/withholding_amount': order.payment['@ondc/org/withholding_amount']??storedOrder?.settlementDetails?.["@ondc/org/withholding_amount"],
-                            "@ondc/org/settlement_details":order?.payment?.type === PAYMENT_TYPES["ON-ORDER"] ?
+                            "@ondc/org/settlement_details":(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                 storedOrder?.settlementDetails?.["@ondc/org/settlement_details"]:
                                 order.payment['@ondc/org/settlement_details'],
 

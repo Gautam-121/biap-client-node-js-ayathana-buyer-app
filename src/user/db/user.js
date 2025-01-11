@@ -4,16 +4,15 @@ import jwt from "jsonwebtoken";
 
 const UserSchema = new mongoose.Schema(
     {
-        name: { type: String, required: true, trim: true},
-        email: { type: String, required: true, unique: true, trim: true, lowercase: true},
-        password: { type: String, required: false, select: false },
-        phone: { type: String, sparse: true},
-        pendingPhone: { type: String, sparse: true },
-        status: { type: String, enum: ['active', 'pending'], default: 'pending' },
-        authProvider: { type: String, enum: ['email', 'google', 'apple'], default: 'email' },
-        providerId: { type: String, sparse: true },
-        isEmailVerified: { type: Boolean, default: false },
+        name: { type: String, trim: true},
+        email: { type: String, unique: true, trim: true, lowercase: true},
+        phone: { type: String, default: null},
+        pendingPhone: { type: String, default: null },
+        status: { type: String, enum: ['active', 'pending', 'deleted'], default: 'pending' },
+        authProvider: { type: String, enum: ['mobile', 'google', 'apple'], default: 'mobile' },
+        providerId: { type: String, default: null },
         isPhoneVerified: { type: Boolean, default: false },
+        isEmailVerified: {type: Boolean , default: false},
         fcmTokens: [{
             token: String,
             device: {
@@ -24,13 +23,12 @@ const UserSchema = new mongoose.Schema(
             },
             lastUsed: Date
         }],
-        verifyId: { type: String, default: null },
-        phoneVerifyId: { type: String, default: null },
-        resetPasswordOTP: { type: String, select: false },
-        resetPasswordExpires: { type: Date, select: false },
-        lastLogin: Date,
+        gender: { type: String , enum: ['male', 'female', 'other', 'undisclosed'], default: 'undisclosed'},
+        registeredAt: { type: Date, default: Date.now },
+        isFirstLogin: {type: Boolean , default: true },
+        lastLogin: { type: Date, default: null },
         createdAt: { type: Date, default: Date.now },
-        updatedAt: Date
+        updatedAt: { type: Date, default: Date.now }
     },
     { _id: true, timestamps: true }
 );
@@ -55,7 +53,8 @@ UserSchema.methods.generateAccessToken = function () {
         {
             decodedToken: {
                 uid: this._id.toString(),
-                email: this.email
+                email: this.email,
+                role: "USER"
             }
         },
         process.env.JWT_SECRET || 'your_access_token_secret',

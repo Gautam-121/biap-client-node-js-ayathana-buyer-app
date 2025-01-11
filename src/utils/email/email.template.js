@@ -93,10 +93,93 @@ export const resetPasswordTemplate = (otp, userName) => `
             
             <div class="footer">
                 <p>This is an automated message, please do not reply.</p>
-                <p>&copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.</p>
+                <p>&copy; ${new Date().getFullYear()} Xiecular Tech Pvt Ltd. All rights reserved.</p>
             </div>
         </div>
     </div>
 </body>
 </html>
 `;
+
+export const inviteCodeTemplate = (name, inviteCode, tokenExpiry) => {
+    // Format the date to "Mon Jan 13 2025"
+    const formattedExpiry = new Date(tokenExpiry).toDateString();
+
+    return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f9f9f9;
+                color: #333;
+                padding: 20px;
+            }
+            .container {
+                background-color: #ffffff;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            .header img {
+                max-width: 100px;
+            }
+            .content {
+                line-height: 1.6;
+            }
+            .invite-code {
+                font-size: 1.2em;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+            .footer {
+                margin-top: 20px;
+                font-size: 0.9em;
+                text-align: center;
+                color: #888;
+            }
+            .button {
+                display: inline-block;
+                padding: 10px 20px;
+                color: #ffffff;
+                background-color: #007bff;
+                border-radius: 5px;
+                text-decoration: none;
+                margin-top: 20px;
+            }
+            .button:hover {
+                background-color: #0056b3;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Welcome to Our Platform!</h1>
+            </div>
+            <div class="content">
+                <p>Hi ${name},</p>
+                <p>We are excited to invite you to join our platform. Use the exclusive invite code below to complete your registration:</p>
+                <p class="invite-code">${inviteCode}</p>
+                <p>Please note that this invite code will expire on <strong>${formattedExpiry}</strong>. Make sure to use it before it expires.</p>
+                <p>If you have any questions or need assistance, feel free to reach out to our support team.</p>
+                <p>Thank you,<br>The Team</p>
+            </div>
+            <div class="footer">
+                <p>&copy; 2025 Our Platform. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+

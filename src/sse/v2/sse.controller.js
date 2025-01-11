@@ -21,6 +21,8 @@ class SseController {
             const { query = {} } = req;
             const { messageId } = query;
 
+            console.log("[Headers] in event call" , req.headers)
+
             if (messageId && messageId.length) {
 
                 const configureSse = new ConfigureSse(req, res, messageId);
@@ -147,13 +149,25 @@ class SseController {
     */
     onQuote(req, res, next) {
         const { body: response } = req;
-
-        console.log("Enter inside the Quote" , response)
-
+    
+        // Log when the request is received
+        const startTime = Date.now();
+        console.log(`[onQuote] Request received:`, response);
+    
+        // Process the quote
         sseProtocolService.onQuote(response).then(result => {
-            console.log("Final Result" , result)
+            // Log the time taken for processing the quote
+            const processingTime = Date.now() - startTime;
+            console.log(`[onQuote] Processing time: ${processingTime}ms`);
+    
+            // Log the final result
+            console.log(`[onQuote] Final Result:`, result);
+    
+            // Send response back
             res.json(result);
         }).catch((err) => {
+            // Log the error if there's an issue
+            console.error(`[onQuote] Error occurred:`, err);
             next(err);
         });
     }
@@ -169,6 +183,7 @@ class SseController {
         const { body: response } = req;
 
         sseProtocolService.onStatus(response).then(result => {
+            console.log("Enter onStatus" , result)
             res.json(result);
         }).catch((err) => {
             next(err);

@@ -42,6 +42,7 @@ const protocolRating = async (data) => {
 
 const protocolGetDumps = async (data) => {
 
+    console.log("Protocol data on_select dump")
     const apiCall = new HttpRequest(
         process.env.PROTOCOL_BASE_URL,
         PROTOCOL_API_URLS.DUMP,
@@ -52,6 +53,7 @@ const protocolGetDumps = async (data) => {
     );
 
     const result = await apiCall.send();
+    console.log("result on_select dump" , result)
     return result.data;
 }
 

@@ -18,7 +18,9 @@ import cartRoutesv2 from "../order/v2/cart/v2/cart.routes.js";
 import sseRoutesv2 from "../sse/v2/sse.routes.js";
 import razorPayv2 from "../razorPay/razorpay.routes.js";
 
-import pahonePayv2 from "../phonePe/phonePe.routes.js"
+import phonePe from "../phonePe/phonePe.routes.js"
+import userRoutes from "../user/user.routes.js"
+import adminRoutes from "../admin/admin.routes.js"
 
 const router = new Router();
 //v1
@@ -40,7 +42,9 @@ router.use(cartRoutesv2);
 router.use(sseRoutesv2);
 router.use(razorPayv2);
 
-router.use(pahonePayv2)
+router.use(phonePe)
+router.use(userRoutes)
+router.use(adminRoutes)
 
 
 export default router;

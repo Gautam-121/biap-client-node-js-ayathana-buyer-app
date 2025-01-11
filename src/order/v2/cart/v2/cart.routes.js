@@ -21,6 +21,12 @@ rootRouter.get(
     cartController.getCartItem,
 );
 
+rootRouter.get(
+    '/v2/shop/cart',
+    authentication(),
+    cartController.getAllCartItemMapToShop,
+);
+
 rootRouter.put(
     '/v2/cart/:itemId',
     authentication(),

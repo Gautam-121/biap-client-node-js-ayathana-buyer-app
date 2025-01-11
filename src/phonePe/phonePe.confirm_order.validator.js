@@ -3,7 +3,6 @@ import { domainEnum } from "../lib/errors/errors.js";
 
 const validateConfirmRequest = {
     confirm_payment :  [
-
         param("merchantTransactionId")
             .exists()
             .withMessage('The "merchantTransactionId" is required.'),
@@ -24,10 +23,6 @@ const validateConfirmRequest = {
             .notEmpty().withMessage('City is required')
             .isString().withMessage('City must be a string'),
     
-        body('confirmRequest.*.context.transactionId')
-            .notEmpty().withMessage('Transaction ID is required')
-            .isUUID().withMessage("Transaction ID must be a valid UUID"),
-
         body('confirmRequest.*.context.transactionId')
             .notEmpty().withMessage('Transaction ID is required')
             .isUUID().withMessage("Transaction ID must be a valid UUID"),
@@ -55,14 +50,16 @@ const validateConfirmRequest = {
     
         body('confirmRequest.*.message.payment["@ondc/org/settlement_window"]')
             .notEmpty().withMessage('Settlement window is required')
-            .isString().withMessage('Settlement window must be a string'),
+            .isString().withMessage('Settlement window must be a string')
+            .matches(/^P\d+D$/).withMessage("@ondc/org/settlement_window must be in ISO 8601 duration format (e.g., P7D)."),
+
     
         body('confirmRequest.*.message.payment["@ondc/org/withholding_amount"]')
             .notEmpty().withMessage('Withholding amount is required')
             .matches(/^[+-]?([0-9]*[.])?[0-9]+$/)
             .withMessage('Withholding amount must be a decimal value'),
         
-         // Validate providers fields
+        // Validate providers fields
         body('confirmRequest.*.message.providers.id')
             .notEmpty().withMessage('Provider ID is required')
             .isString().withMessage('Provider ID must be a string'),
@@ -79,12 +76,6 @@ const validateConfirmRequest = {
             .withMessage('Amount is required.')
             .isNumeric()
             .withMessage('Amount must be a valid number.'),
-
-        body('merchantTransactionId')
-            .exists()
-            .withMessage('merchantTransactionId is required.')
-            .isString()
-            .withMessage('merchantTransactionId must be a string.')
     ]
 }
 

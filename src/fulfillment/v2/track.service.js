@@ -4,6 +4,7 @@ import { PROTOCOL_CONTEXT } from "../../utils/constants.js";
 import BppTrackService from "./bppTrack.service.js";
 import ContextFactory from "../../factories/ContextFactory.js";
 import {getOrderById} from "../../order/v1/db/dbService.js";
+import BadRequestParameterError from "../../lib/errors/bad-request-parameter.error.js";
 
 const bppTrackService = new BppTrackService();
 
@@ -19,6 +20,21 @@ class TrackService {
 
 
             const orderDetails = await getOrderById(trackRequest.message.order_id);
+
+            // Check order state and throw appropriate errors
+            switch (orderDetails[0]?.state) {
+                case "Completed":
+                    throw new BadRequestParameterError("Order tracking is no longer available as the order has been completed");
+                case "Created":
+                    throw new BadRequestParameterError("Order tracking is not available for newly created orders. Please wait for order processing");
+                case "Accepted":
+                    throw new BadRequestParameterError("Order tracking will be available once the order is in progress");
+                case "Cancelled":
+                    throw new BadRequestParameterError("Tracking is not available for cancelled orders");
+                case "In-Progress":
+                    // Only allow tracking for In-Progress orders
+                    break;
+            }
 
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({

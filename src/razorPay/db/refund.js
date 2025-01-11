@@ -1,29 +1,55 @@
-import mongoose from'mongoose';
+import mongoose from 'mongoose';
 import { uuid } from 'uuidv4';
 
 const refundSchema = new mongoose.Schema({
-    _id:{
+    _id:{ // 
         type: String,
         required:true,
         default: () => uuid(),
     },
-    amount: {
-        type:Number,
+    originalTransactionId: { // 
+        type: String,
+        required: true
     },
-    status: {
-        type:String,
+    refundTransactionId: { // 
+        type: String,
+        required: true,
+        unique: true
     },
-    orderId: {
-        type:String,
+    amount: { // 
+        type: Number,
+        required: true
     },
-    paymentId: {
-        type:String,
+    status: { // 
+        type: String,
+        enum: ['INITIATED', 'PROCESSING', 'COMPLETED', 'FAILED'],
+        default: 'INITIATED'
     },
-},{
-    strict: true,
-    collation: { locale: 'en_US', strength: 1 }
+    refundType: { // 
+        type: String,
+        enum: ['FULL', 'PARTIAL'],
+        required: true
+    },
+    attempts: { // 
+        type: Number,
+        default: 1
+    },
+    lastAttempt: {
+        type: Date
+    },
+    response: {
+        type: Object
+    },
+    errorMessage: String,
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    updatedAt: {
+        type: Date
+    }
 });
+
 
 const Refund = mongoose.model('Refund',refundSchema);
 export default Refund;
-

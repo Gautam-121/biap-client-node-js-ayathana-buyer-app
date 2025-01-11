@@ -101,7 +101,7 @@ class ConfirmOrderService {
 
         console.log("dbResponse---------------->",dbResponse)
 
-        if (dbResponse?.paymentStatus === null) {
+        if (dbResponse && dbResponse?.paymentStatus === null) {
 
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
@@ -153,7 +153,7 @@ class ConfirmOrderService {
             console.log("bppConfirmResponse-------------------->",bppConfirmResponse);
 
             if (bppConfirmResponse?.message?.ack)
-                await this.updateOrder(dbResponse, bppConfirmResponse, order?.payment?.type);
+                await this.updateOrder(dbResponse, bppConfirmResponse, dbResponse.paymentType || order?.payment?.type);
 
             return bppConfirmResponse;
 

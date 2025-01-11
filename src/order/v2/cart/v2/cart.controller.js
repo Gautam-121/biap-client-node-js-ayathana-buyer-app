@@ -29,6 +29,17 @@ class CartController {
         }
     }
 
+    async getAllCartItemMapToShop(req, res, next) {
+        try {
+
+            return  res.send(await cartService.getCartItemMapToShop({...req.body,userId: req.user.decodedToken.uid}));
+
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+
 
     async updateItem(req, res, next) {
         try {

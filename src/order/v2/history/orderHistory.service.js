@@ -103,7 +103,6 @@ class OrderHistoryService {
                     }
                     orderList.push({...order})
 
-
                 }
 
                 return {
