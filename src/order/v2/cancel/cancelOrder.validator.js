@@ -1,5 +1,5 @@
-import { body } from "express-validator"
-import { CANCELATION_REASONS } from "../../../utils/cancellation-return-reason";
+import { body , query } from "express-validator"
+import { CANCELATION_REASONS } from "../../../utils/cancellation-return-reason.js";
 
 
 const cancelValidator = {

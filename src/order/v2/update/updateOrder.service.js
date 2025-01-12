@@ -1,6 +1,6 @@
 import { onOrderCancel ,onUpdateStatus} from "../../../utils/protocolApis/index.js";
 import { PROTOCOL_CONTEXT } from "../../../utils/constants.js";
-const { parseISO, add, isBefore } = require("date-fns");
+import {parseISO, add, isBefore} from "date-fns"
 import {
     getOrderById, saveOrderRequest,getOrderRequest,
     addOrUpdateOrderWithdOrderId

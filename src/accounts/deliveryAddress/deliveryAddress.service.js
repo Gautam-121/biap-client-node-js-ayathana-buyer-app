@@ -28,7 +28,7 @@ class DeliveryAddressService {
                     phone: request?.descriptor?.phone?.trim(),
                     email: request?.descriptor?.email?.trim().toLowerCase()
                 },
-                gps: `${request?.lat},${request?.lng}`, 
+                gps: `${request?.address?.lat},${request?.address?.lng}`, 
                 defaultAddress: true, 
                 address: {
                     areaCode: request?.address?.areaCode,
@@ -47,7 +47,7 @@ class DeliveryAddressService {
             // Perform operations within transaction and Mark all previous addresses for the user as non-default
             await DeliveryAddressMongooseModel.updateMany(
                 { userId: user.decodedToken.uid },
-                { defaultAddress: false },
+                { $set: { defaultAddress: false } },
                 { session }  // Add session to the query
             );
     
@@ -63,7 +63,8 @@ class DeliveryAddressService {
             // Commit the transaction
             await session.commitTransaction();
             session.endSession();
-    
+
+            // Format and return response
             return {
                 id: storedDeliveryAddress?.id, 
                 descriptor: {
@@ -90,7 +91,11 @@ class DeliveryAddressService {
                 await session.abortTransaction();
                 session.endSession();
             }
-            console.error('Error in deliveryAddress:', err);
+            console.error('Error in AddDeliveryAddress:', {
+                error: err.message,
+                userId: user?.decodedToken?.uid,
+                stack: err.stack
+            });
             throw new Error(`Failed to save delivery address: ${err.message}`);
         }
     }
@@ -101,9 +106,8 @@ class DeliveryAddressService {
      */
     async onDeliveryAddressDetails(user = {}) {
         try {
-            const deliveryAddressDetails = await DeliveryAddressMongooseModel.find({ 
-                userId: user?.decodedToken?.uid
-            })
+            // Fetch addresses with lean() for better performance
+            const deliveryAddressDetails = await DeliveryAddressMongooseModel.find({ userId: user?.decodedToken?.uid}).lean().exec()
 
             // Handle case when no addresses found
             if (!deliveryAddressDetails || deliveryAddressDetails.length === 0) {
@@ -135,7 +139,11 @@ class DeliveryAddressService {
         }
         catch (err) {
             // Catch and rethrow the error, providing a clear message for the caller
-            console.error('Error in onDeliveryAddressDetails:', err.message);
+            console.error('Error in onDeliveryAddressDetails:', {
+                error: err.message,
+                userId: user?.decodedToken?.uid,
+                stack: err.stack
+            });
             throw new Error(`Failed to fetch delivery addresses: ${err.message}`);
         }
     }
@@ -188,6 +196,7 @@ class DeliveryAddressService {
                 throw new NoRecordFoundError(`Delivery address with id ${id} not found`);
             }
 
+            // Check if trying to unset the default address
             if(storedDeliveryAddress?.defaultAddress && (typeof(request?.defaultAddress) !== 'undefined' && request?.defaultAddress === false)) {
                 throw new BadRequestParameterError('Default address cannot be unset. To change default address, please set another address as default first.');
             }
@@ -199,7 +208,7 @@ class DeliveryAddressService {
                         userId,
                         id: { $ne: id } // Exclude current address
                     },
-                    { defaultAddress: false },
+                    { $set: { defaultAddress: false } },
                     { session }
                 );
             }
@@ -207,11 +216,13 @@ class DeliveryAddressService {
             // Update the delivery address with new data
             storedDeliveryAddress = await DeliveryAddressMongooseModel.findOneAndUpdate(
                 { id: id , userId: userId},
-                { ...deliveryAddressSchema },
+                { $set: deliveryAddressSchema },
                 {
-                    returnDocument: "after",
+                    new: true,  // Use 'new' instead of returnDocument for better compatibility
                     session,
-                    runValidators: true // Run schema validators
+                    runValidators: true, // Run schema validators
+                    lean: true  // Use lean for better performance
+
                 }
             );
     
@@ -221,7 +232,8 @@ class DeliveryAddressService {
             // Commit the transaction
             await session.commitTransaction();
             session.endSession();
-    
+
+            // Format and return response
             return {
                 id: storedDeliveryAddress?.id,
                 descriptor: {
@@ -252,7 +264,11 @@ class DeliveryAddressService {
             if(error instanceof BadRequestParameterError || error instanceof NoRecordFoundError ){
                 throw error
             }
-            console.error('Error in updateDeliveryAddress:', error);
+            console.error('Error in UpdateDeliveryAddress:', {
+                error: err.message,
+                userId: user?.decodedToken?.uid,
+                stack: err.stack
+            });
             throw new Error(`Failed to update delivery address: ${error.message}`);
         }
     }
@@ -298,12 +314,12 @@ class DeliveryAddressService {
                     { userId, id: { $ne: id } },
                     { id: 1 },
                     { session }
-            );
+            ).sort({createdAt: -1});
 
             if (remainingAddress) {
                 const updateResult = await DeliveryAddressMongooseModel.updateOne(
                     { id: remainingAddress.id },
-                    { defaultAddress: true },
+                    { $set: { defaultAddress: true }},
                     { session }
                 );
 
@@ -330,7 +346,11 @@ class DeliveryAddressService {
             }
 
             if(error instanceof NoRecordFoundError) throw error
-            console.error('Error in deleteDeliveryAddress:', error.message);
+            console.error('Error in UpdateDeliveryAddress:', {
+                error: err.message,
+                userId: user?.decodedToken?.uid,
+                stack: err.stack
+            });
             throw error;
         }
     }

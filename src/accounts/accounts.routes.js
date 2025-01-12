@@ -4,6 +4,8 @@ import { authentication } from '../middlewares/index.js';
 import BillingController from './billings/billing.controller.js';
 import DeliveryAddressController from './deliveryAddress/deliveryAddress.controller.js';
 import MapController from "./map/map.controller.js";
+import deliveryValidator from "./deliveryAddress/deliveryAddress.validator.js"
+import billingValidator from "./billings/billing.validator.js"
 
 const rootRouter = new Router();
 
@@ -16,14 +18,16 @@ const deliveryAddressController = new DeliveryAddressController();
 rootRouter.post(
     '/v1/billing_details', 
     authentication(),
+    billingValidator.billingAddress,
     billingController.billingAddress,
 );
 
 rootRouter.get('/v1/billing_details', authentication(), billingController.onBillingDetails);
 
-rootRouter.post(
+rootRouter.put(
     '/v1/update_billing_details/:id', 
     authentication(),
+    billingValidator.updateBillingAddress,
     billingController.updateBillingAddress,
 );
 
@@ -34,6 +38,7 @@ rootRouter.post(
 rootRouter.post(
     '/v1/delivery_address', 
     authentication(),
+    deliveryValidator.deliveryAddress,
     deliveryAddressController.deliveryAddress,
 );
 
@@ -43,10 +48,18 @@ rootRouter.get(
     deliveryAddressController.onDeliveryAddressDetails
 );
 
-rootRouter.post(
+rootRouter.put(
     '/v1/update_delivery_address/:id', 
     authentication(),
+    deliveryValidator.updateDeliveryAddress,
     deliveryAddressController.updateDeliveryAddress,
+);
+
+rootRouter.delete(
+    '/v1/delete_delivery_address/:id', 
+    authentication(),
+    deliveryValidator.deleteDeliveryAddress,
+    deliveryAddressController.deleteDeliveryAddress,
 );
 
 rootRouter.get(

@@ -57,8 +57,6 @@ const authentication = (options) => async (req, res, next) => {
         // Find user
         const user = decoded.decodedToken.role == "ADMIN" ? await AdminMongooseModel.findById(userId) : await UserMongooseModel.findById(userId)
 
-        // const user =  await UserMongooseModel.findById(userId)
-
         if (!user) {
             return next(new UnauthenticatedError("Invalid token or user not found"));
         }

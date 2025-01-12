@@ -1,5 +1,5 @@
 import { body , param , query } from "express-validator"
-import { RETURN_REASONS } from "../../../utils/cancellation-return-reason"
+import { RETURN_REASONS } from "../../../utils/cancellation-return-reason.js"
 
 const updateOrderValidator = {
     update: [

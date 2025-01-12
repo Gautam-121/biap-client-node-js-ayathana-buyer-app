@@ -1,4 +1,4 @@
-import {body} from "express-validator"
+import {body , query } from "express-validator"
 
 const statusValidator = {
     status: [
