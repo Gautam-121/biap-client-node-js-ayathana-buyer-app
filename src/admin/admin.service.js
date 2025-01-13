@@ -104,15 +104,13 @@ class AdminService {
             };
     
         } catch (error) {
-            // If the error is an instance of UnauthenticatedError, rethrow it
-            if (error instanceof UnauthenticatedError) throw error;
-    
             // Log the error details for debugging
             console.error('Error in login function:', {
                 error: error.message,
                 stack: error.stack
             });
-    
+            // If the error is an instance of UnauthenticatedError, rethrow it
+            if (error instanceof UnauthenticatedError) throw error;
             // Throw a generic error message to the client, or use the provided error message
             throw new Error(error.message || "Error Processing login");
         }
@@ -180,8 +178,8 @@ class AdminService {
                 throw new BadRequestParameterError(`An active invite already exists and has not expired.`)
             }
 
-            if(interest.status === "registered"){
-                throw new BadRequestParameterError("The user has already been registered. No further action is required")
+            if(invite.staus === "registered"){
+                throw new BadRequestParameterError("The invite email already complete registration")
             }
     
             // Generate Invite Code
@@ -210,14 +208,11 @@ class AdminService {
                 await session.abortTransaction();
                 session.endSession()
             }
-
             // Log the error with context
             console.error('Error in sendInvite:', {
                 error: error.message,
                 stack: error.stack,
-            });
-
-    
+            });    
             if(error instanceof NoRecordFoundError) throw error
             else if(error instanceof BadRequestParameterError) throw error
     

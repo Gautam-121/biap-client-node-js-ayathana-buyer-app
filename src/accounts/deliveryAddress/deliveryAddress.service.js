@@ -93,7 +93,6 @@ class DeliveryAddressService {
             }
             console.error('Error in AddDeliveryAddress:', {
                 error: err.message,
-                userId: user?.decodedToken?.uid,
                 stack: err.stack
             });
             throw new Error(`Failed to save delivery address: ${err.message}`);
@@ -141,7 +140,6 @@ class DeliveryAddressService {
             // Catch and rethrow the error, providing a clear message for the caller
             console.error('Error in onDeliveryAddressDetails:', {
                 error: err.message,
-                userId: user?.decodedToken?.uid,
                 stack: err.stack
             });
             throw new Error(`Failed to fetch delivery addresses: ${err.message}`);
@@ -261,14 +259,14 @@ class DeliveryAddressService {
                 session.endSession();
             }
 
+            console.error('Error in UpdateDeliveryAddress:', {
+                error: err.message,
+                stack: err.stack
+            });
+
             if(error instanceof BadRequestParameterError || error instanceof NoRecordFoundError ){
                 throw error
             }
-            console.error('Error in UpdateDeliveryAddress:', {
-                error: err.message,
-                userId: user?.decodedToken?.uid,
-                stack: err.stack
-            });
             throw new Error(`Failed to update delivery address: ${error.message}`);
         }
     }
@@ -344,13 +342,12 @@ class DeliveryAddressService {
                 await session.abortTransaction();
                 session.endSession();
             }
-
-            if(error instanceof NoRecordFoundError) throw error
             console.error('Error in UpdateDeliveryAddress:', {
                 error: err.message,
-                userId: user?.decodedToken?.uid,
                 stack: err.stack
             });
+
+            if(error instanceof NoRecordFoundError) throw error
             throw error;
         }
     }

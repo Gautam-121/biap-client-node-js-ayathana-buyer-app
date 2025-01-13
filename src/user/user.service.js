@@ -1131,13 +1131,16 @@ class UserService {
                 interest: interest
             }
         } catch (error) {
+            // Log the error with context
+            console.error('Error in submitting InviteForm:', {
+                error: error.message,
+                stack: error.stack,
+            });
 
             if (error instanceof ConflictError) {
                 // Re-throw the ConflictError to be handled by the middleware or controller
                 throw error;
             }
-
-            console.error('Interest form error:', error);
             throw new Error(error.message || "Error Processing interest form")
         }
     }
@@ -1145,8 +1148,9 @@ class UserService {
     async checkInvitedUser(request) {
         try {
             const { email } = request;
+            const sanitizedEmail = email.trim().toLowerCase()
     
-            const invite = await Interest.findOne({ email: email });
+            const invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
                 throw new NoRecordFoundError(`No invitation found for the provided email: ${email}`);
@@ -1166,7 +1170,11 @@ class UserService {
             };
     
         } catch (error) {
-            console.error('Error in checking invitation status:', error);
+            // Log the error with context
+            console.error('Error in checking invitation status:', {
+                error: error.message,
+                stack: error.stack,
+            });
             if (error instanceof NoRecordFoundError) throw error;
     
             throw new Error('An unexpected error occurred while checking the invitation status. Please try again later.');
@@ -1176,20 +1184,29 @@ class UserService {
     async validateCode(request) {
         try {
             const { email, inviteCode } = request;
+            const sanitizedEmail = email.trim().toLowerCase()
     
-            const invite = await Interest.findOne({ email: email,  status: "invited" });
+            const invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
-                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}. Please check your invitation details.`);
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}.`);
+            }
+
+            if(invite.status === "pending"){
+                throw new BadRequestParameterError("The invitation is still pending. Please wait for approval.")
+            }
+
+            if(invite.staus === "registered"){
+                throw new BadRequestParameterError("The invite email already complete registration")
             }
 
             if (invite.inviteCode !== inviteCode) {
-                throw new BadRequestParameterError("The invitation code provided is incorrect. Please double-check the code and try again.");
+                throw new BadRequestParameterError("The invitation code provided is incorrect");
             }
     
             // Check if the invite code has expired
             if (invite.inviteExpiry && new Date() > invite.inviteExpiry) {
-                throw new BadRequestParameterError('The invitation code has expired. Please request a new invitation code.');
+                throw new BadRequestParameterError('The invitation code has expired');
             }
     
             invite.status = 'registered';
@@ -1201,7 +1218,10 @@ class UserService {
             };
     
         } catch (error) {
-            console.error('Error in validating invitation code:', error);
+            console.error('Error in validating invitation code', {
+                error: error.message,
+                stack: error.stack,
+            });
             if (error instanceof NoRecordFoundError) throw error;
             if (error instanceof BadRequestParameterError) throw error;
     
@@ -1210,35 +1230,37 @@ class UserService {
     }
 
     async resendCode(request) {
-        let invite = null; 
-        let previousState = {};
-
+        let session = null
         try {
+
+            // Start Transaction
+            session = await mongoose.startTransaction
+            session.startTransaction()
+
             const { email } = request;
+            const sanitizedEmail = email.trim().toLowerCase()
     
-            invite = await Interest.findOne({ email: email,  status: "invited" });
+            let invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
-                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}. Please check your invitation details.`);
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}`);
+            }
+
+            if(invite.status === "pending"){
+                throw new BadRequestParameterError("The invitation is still pending. Please wait for approval.")
+            }
+
+            if(invite.staus === "registered"){
+                throw new BadRequestParameterError("The invite email already complete registration")
             }
     
             // Check if the invite code has expired
             if(invite.inviteExpiry && invite.inviteExpiry > new Date()){
-                throw new BadRequestParameterError( 
-                    `An active invite already exists and has not expired. It will expire on ${invite.inviteExpiry.toLocaleString()}. Please wait until it expires before sending a new invite.`
-                )
+                throw new BadRequestParameterError( `An active invite already exists and has not expired.`)
             }
 
             // Generate Invite Code
             const inviteCode = this.generateInviteCode();
-
-            // Save the current state of interest for rollback purposes
-            previousState = {
-                status: invite.status,
-                inviteCode: invite.inviteCode,
-                invitedAt: invite.invitedAt,
-                inviteExpiry: invite.inviteExpiry,
-            };
 
             // Update interest with invite details
             invite.inviteCode = inviteCode;
@@ -1256,16 +1278,17 @@ class UserService {
             };
     
         } catch (error) {
-            console.error("Error during sendInvite operation", error);
-            // Rollback changes if any were made
-            if (invite && invite.status === "invited") {
-                try {
-                    Object.assign(invite, previousState);
-                    await invite.save();
-                } catch (rollbackError) {
-                    console.error("Error during rollback operation", rollbackError);
-                }
+            if(session){
+                await session.abortTransaction
+                session.endSession()
             }
+
+            // Log the error with context
+            console.error('Error in resendCode:', {
+                error: error.message,
+                stack: error.stack,
+            });
+
             if (error instanceof NoRecordFoundError) throw error;
             if (error instanceof BadRequestParameterError) throw error;
     
