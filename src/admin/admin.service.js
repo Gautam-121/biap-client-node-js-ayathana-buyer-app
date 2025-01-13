@@ -69,112 +69,108 @@ class AdminService {
         return `${code}${timestamp}`;
     }
 
-    async register(request) {
+    async login(request) {
         try {
-            const { name, email, password } = request
-            const sanitizedName = name.trim().replace(/\s+/g, ' ')
-            const sanitizedEmail = email.trim().toLowerCase()
-
-            const existingAdmin = await Admin.findOne({ email: sanitizedEmail })
-
-            if (existingAdmin) {
-                throw new ConflictError("Email is already used")
-            }
-
-            const admin = await Admin.create({
-                name: sanitizedName,
-                email: sanitizedEmail,
-                password: password
-            })
-
-            return {
-                success: true,
-                message: "Admin registered successfully",
-                data: this.sanitizeAdmin(admin)
-            }
-
-        } catch (error) {
-
-            if(error instanceof ConflictError){
-                throw error
-            }
-
-            console.error('Admin registration error:', error);
-            throw new Error(error.message || "Error Processing admin regitration")
-        }
-    }
-
-    async login(request){
-        try {
-            const { email , password } = request
-            const sanitizedEmail = email.trim().toLowerCase()
+            // Destructure email and password from the request object
+            const { email, password } = request;
     
-            const admin = await Admin.findOne({email: sanitizedEmail})
+            // Sanitize the email by trimming whitespace and converting to lowercase
+            const sanitizedEmail = email.trim().toLowerCase();
     
-            if(!admin){
-                throw new UnauthenticatedError("Invalid Email or Password")
+            // Find the admin user in the database by the sanitized email
+            const admin = await Admin.findOne({ email: sanitizedEmail });
+    
+            // If no admin is found, throw an UnauthenticatedError with a generic message
+            if (!admin) {
+                throw new UnauthenticatedError("Invalid Email or Password");
             }
     
+            // Compare the provided password with the stored password
             const isPasswordCorrect = await admin.isPasswordCompare(password);
-            if(!isPasswordCorrect){
-                throw new UnauthenticatedError("Invalid Email or Password")
+            // If the password is incorrect, throw an UnauthenticatedError with a generic message
+            if (!isPasswordCorrect) {
+                throw new UnauthenticatedError("Invalid Email or Password");
             }
     
-            const token = await admin.generateAccessToken()
+            // Generate an access token for the admin user
+            const token = await admin.generateAccessToken();
     
+            // Return a success response with sanitized admin data and the generated token
             return {
                 success: true,
-                message: "Login Successfull",
-                data: this.sanitizeAdmin(admin),
+                message: "Login Successful",
+                data: this.sanitizeAdmin(admin), // Sanitize admin data to remove sensitive information
                 token: token
-            }
-
+            };
+    
         } catch (error) {
-
-            if(error instanceof UnauthenticatedError){
-                throw error
-            }
-
-            console.error("Login error:", error)
-            throw new Error(error.message || "Error Proccessing login")
+            // If the error is an instance of UnauthenticatedError, rethrow it
+            if (error instanceof UnauthenticatedError) throw error;
+    
+            // Log the error details for debugging
+            console.error('Error in login function:', {
+                error: error.message,
+                stack: error.stack
+            });
+    
+            // Throw a generic error message to the client, or use the provided error message
+            throw new Error(error.message || "Error Processing login");
         }
     }
 
-    async getInterested(request , user , query){
+    async getInterested(request, user, query) {
         try {
-            const { status , page=1 , limit = 10 } = query
-            const queryResult = status ? { status } : {}
-    
+            const { status, page = 1, limit = 10 } = query;
+            
+            // Validate and sanitize input
+            const sanitizedPage = Math.max(parseInt(page), 1); // Ensure page is at least 1
+            const sanitizedLimit = Math.max(parseInt(limit), 1); // Ensure limit is at least 1
+            const queryResult = status ? { status } : {}; // Build query object based on status
+            
+            // Fetch the interest data with pagination
             const interest = await Interest.find(queryResult)
-                .sort({createdAt: -1})
-                .skip((page-1)*limit)
-                .limit(limit)
-                .select({"__v": 0})
-
-            const countRecods = await Interest.find(queryResult).count()
-    
-           return {
-               success: true,
-               data: interest,
-               pagination:{
-                  current: page,
-                  total: Math.ceil(countRecods / limit),
-                  totalRecords: countRecods
-               }
-           }
+                .sort({ createdAt: -1 }) // Sort by creation date in descending order
+                .skip((sanitizedPage - 1) * sanitizedLimit) // Skip records for pagination
+                .limit(sanitizedLimit) // Limit the number of records fetched
+                .select({ "__v": 0 }); // Exclude the `__v` field
+            
+            // Count the total records matching the query
+            const totalRecords = await Interest.countDocuments(queryResult);
+            
+            return {
+                success: true,
+                data: interest, // Return the fetched data
+                pagination: {
+                    current: sanitizedPage, // Current page number
+                    total: Math.ceil(totalRecords / sanitizedLimit), // Total number of pages
+                    totalRecords: totalRecords // Total number of matching records
+                }
+            };
         } catch (error) {
-            console.error("Fetching Interested forms" , error)
-            throw new Error(error.message || "Error while fetching interested forms")
+            // Log the error details for debugging
+            console.error('Error in getInterested function:', {
+                error: error.message,
+                stack: error.stack
+            });
+            throw new Error(error.message || "Error while fetching interested forms"); // Throw a generic error message
         }
     }
-
+    
     async sendInvite(request, user, params) {
-        let interest = null; 
-        let previousState = {};
+        let session = null;
     
         try {
-            // Fetch the interest record
-            interest = await Interest.findById(params.id);
+
+            // Start transaction
+            session = await mongoose.startSession();
+            session.startTransaction();
+            
+            // Fetch the interest record with session
+            const interest = await Interest.findById(
+                params.id,
+                null,
+                { session, lean: false }  // Don't use lean as we need to modify the document
+            );
             
             if (!interest) {
                 throw new NoRecordFoundError(`Interest form not found with id: ${params.id}`);
@@ -193,15 +189,6 @@ class AdminService {
             // Generate Invite Code
             const inviteCode = this.generateInviteCode();
     
-            // Save the current state of interest for rollback purposes
-            previousState = {
-                status: interest.status,
-                inviteCode: interest.inviteCode,
-                invitedAt: interest.invitedAt,
-                inviteExpiry: interest.inviteExpiry,
-            };
-
-    
             // Update interest with invite details
             interest.inviteCode = inviteCode;
             interest.status = "invited";
@@ -211,24 +198,28 @@ class AdminService {
     
             // Send invite email
             await emailService.sendInviteEmail(interest.email, interest.name, inviteCode , interest.inviteExpiry );
+
+            // Commit the transaction
+            await session.commitTransaction();
+            session.endSession()
     
             return {
                 success: true,
                 message: `Invite sent successfully to ${interest.email}`,
             };
         } catch (error) {
-            console.error("Error during sendInvite operation", error);
-    
-            // Rollback changes if any were made
-            if (interest && interest.status === "invited") {
-                try {
-                    Object.assign(interest, previousState);
-                    await interest.save();
-                } catch (rollbackError) {
-                    console.error("Error during rollback operation", rollbackError);
-                }
+            if (session) {
+                await session.abortTransaction();
+                session.endSession()
             }
 
+            // Log the error with context
+            console.error('Error in sendInvite:', {
+                error: error.message,
+                stack: error.stack,
+            });
+
+    
             if(error instanceof NoRecordFoundError) throw error
             else if(error instanceof BadRequestParameterError) throw error
     
@@ -236,7 +227,6 @@ class AdminService {
         }
     }
 
-    
 }
 
 export default AdminService;

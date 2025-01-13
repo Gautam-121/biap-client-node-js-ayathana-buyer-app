@@ -6,19 +6,6 @@ const adminService = new AdminService();
 
 class AdminController {
 
-    register(req , res , next){
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new BadRequestParameterError(errors.array()[0].msg);
-        }
-
-        const {body: request} = req
-        adminService.register(request).then(response=>{
-            res.status(201).json(response)
-        })
-        .catch(err=>next(err))
-    }
-
     login(req , res , next){
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

@@ -1,36 +1,6 @@
 import { body, param, query } from "express-validator";
 
 const admin = {
-    register: [
-        body("name")
-            .notEmpty()
-            .withMessage("Name is required")
-            .isString()
-            .withMessage("Name must be a string")
-            .trim()
-            .escape()
-            .isLength({ min: 2, max: 50 })
-            .withMessage("Name must be between 2 and 50 characters long"),
-        body("email")
-            .notEmpty()
-            .withMessage("Email is required")
-            .isEmail()
-            .withMessage("Invalid email format")
-            .normalizeEmail(),
-        body("password")
-            .notEmpty()
-            .withMessage("Password is required")
-            .isStrongPassword({
-                minLength: 8,
-                minLowercase: 1,
-                minUppercase: 1,
-                minNumbers: 1,
-                minSymbols: 1
-            })
-            .withMessage(
-                "Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character"
-            ),
-    ],
     login: [
         body("email")
             .notEmpty()

@@ -7,12 +7,6 @@ import adminValidator from './admin.validator.js';
 const rootRouter = new Router();
 const adminController = new AdminController();
 
-rootRouter.post( 
-    '/admin/register', 
-    adminValidator.register,
-    adminController.register,
-);
-
 rootRouter.post( // 
     '/admin/login', 
     adminValidator.login,
@@ -30,6 +24,7 @@ rootRouter.get( //
 rootRouter.post( //
     '/admin/interests/:id/invite',
     authentication(),
+    authorisation(["ADMIN"]),
     adminValidator.sendInvite, 
     adminController.sendInvite
 );
