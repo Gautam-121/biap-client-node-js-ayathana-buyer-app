@@ -394,7 +394,7 @@ class UserService {
             }
 
            // Strict separation - Don't allow cross-provider login
-            if (user && user.authProvider !== 'google') {
+            if (user && user.authProvider == 'apple') {
                 throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
             }
 
@@ -416,6 +416,7 @@ class UserService {
                 // Step 4: If user exists, update the provider ID and last login time , check there status
                 user.providerId = uid;
                 user.lastLogin = new Date();
+                user.authProvider = 'google'
                 user.name = name.trim().replace(/\s+/g, ' ') || user.name;
                 // Save user changes
                 await user.save();
@@ -478,7 +479,7 @@ class UserService {
             }
 
             // Strict separation - Don't allow cross-provider login
-            if (user && user.authProvider !== 'apple') {
+            if (user && user.authProvider == 'google') {
                 throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
             }
 
@@ -502,10 +503,11 @@ class UserService {
                     email: (userEmail && userEmail?.trim().toLocaleLowerCase()) || email?.trim()?.toLowerCase(),
                     authProvider: 'apple',
                     providerId: appleUserId || appleId,
-                    isEmailVerified: true,
                     status: 'active',
-                    lastLogin: new Date(),
+                    isEmailVerified: true,
                     isFirstLogin: false,
+                    registeredAt: new Date(),
+                    lastLogin: new Date(),
                     fcmTokens: []
                 });
             } else {
@@ -612,7 +614,7 @@ class UserService {
             if (otp.lastVerificationAttempt) {
                 const timeSinceRequest = Date.now() - new Date(otp.lastVerificationAttempt).getTime();
                 if (timeSinceRequest > VERIFICATION_TIMEOUT) {
-                    await OTP.deleteOne({ _id: otpRecord._id });
+                    // await OTP.deleteOne({ _id: otpRecord._id });
                     throw new BadRequestParameterError(
                         'Verification code has expired. Please request a new verification OTP.'
                     );
@@ -781,7 +783,7 @@ class UserService {
             if (existingUser.lastVerificationAttempt) {
                 const timeSinceRequest = Date.now() - new Date(existingUser.lastVerificationAttempt).getTime();
                 if (timeSinceRequest > VERIFICATION_TIMEOUT) {
-                    await OTP.deleteOne({ _id: otpRecord._id });
+                    // await OTP.deleteOne({ _id: otpRecord._id });
                     throw new BadRequestParameterError('The verification code has expired. Please request a new one.');
                 }
             }

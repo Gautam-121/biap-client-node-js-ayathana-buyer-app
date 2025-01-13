@@ -30,7 +30,7 @@ class SearchController {
             if(!response || response === null)
                 throw new NoRecordFoundError("No result found");
             else
-                res.json(response);
+                res.status(200).json(response);
         }).catch((err) => {
             next(err);
         });
@@ -78,7 +78,7 @@ class SearchController {
             if(!response || response === null)
                 throw new NoRecordFoundError("No result found");
             else
-                res.json(response);
+                res.status(200).json(response);
         }).catch((err) => {
             next(err);
         });
@@ -187,10 +187,11 @@ class SearchController {
     * @return {callback}
     */
     getAttributes(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
         const searchRequest = req.query;
-
-        console.log({searchRequest})
-
         searchService.getAttributes(searchRequest).then(response => {
             if(!response || response === null)
                 throw new NoRecordFoundError("No result found");
@@ -322,9 +323,6 @@ class SearchController {
     */
     getAttributesValues(req, res, next) {
         const searchRequest = req.query;
-
-        console.log({searchRequest})
-
         searchService.getAttributesValues(searchRequest).then(response => {
             if(!response || response === null)
                 throw new NoRecordFoundError("No result found");
@@ -362,7 +360,7 @@ class SearchController {
             if(!response || response === null)
                 throw new NoRecordFoundError("No result found");
             else
-                res.json(response);
+                res.status(200).json(response);
         }).catch((err) => {
             next(err);
         });

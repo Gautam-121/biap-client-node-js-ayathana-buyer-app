@@ -82,7 +82,7 @@ class AdminService {
     
             // If no admin is found, throw an UnauthenticatedError with a generic message
             if (!admin) {
-                throw new UnauthenticatedError("Invalid Email or Password");
+                throw new NoRecordFoundError("Admin not found");
             }
     
             // Compare the provided password with the stored password

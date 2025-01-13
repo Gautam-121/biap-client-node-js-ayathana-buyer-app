@@ -345,7 +345,11 @@ class SearchService {
         }
       };
     } catch (err) {
-      console.error('Search error:', err);
+      // Catch and rethrow the error, providing a clear message for the caller
+      console.error('Error in search:', {
+        error: err.message,
+        stack: err.stack
+      });
       throw new Error(`Search failed: ${err.message}`);
     }
   }
@@ -827,7 +831,10 @@ class SearchService {
       // Return the provider details with unique categories
       return provider_details;
     } catch (err) {
-      console.error('Error in getProviderDetails:', err);
+      console.error('Error in getProviderDetails:', {
+        error: err.message,
+        stack: err.stack
+      });
       throw err;
     }
   }
@@ -1181,6 +1188,10 @@ class SearchService {
         };
 
     } catch (err) {
+      console.error('Error in getAttributes:', {
+        error: err.message,
+        stack: err.stack
+      });
         throw err;
     }
 }
@@ -2040,7 +2051,7 @@ async getGlobalProviders(searchRequest, targetLanguage = "en") {
 async getProviders(searchRequest, targetLanguage = "en") {
   try {
     let filterArray = [];
-    let limit = searchRequest.limit || 10;
+    let limit = parseInt(searchRequest.limit) || 10;
 
     filterArray.push({
       geo_distance: {
@@ -2149,7 +2160,10 @@ async getProviders(searchRequest, targetLanguage = "en") {
     };
 
   } catch (err) {
-    console.error('Error in getProviders:', err);
+    console.error('Error in getProviders:', {
+      error: err.message,
+      stack: err.stack
+    });
     throw err;
   }
 }

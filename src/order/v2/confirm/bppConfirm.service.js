@@ -127,7 +127,6 @@ class BppConfirmService {
 
 
             //get TAT object from select request
-
             let on_select = await protocolGetDumps({type:"on_select",transaction_id:context.transaction_id})
 
             console.log("on_select------------->",on_select)

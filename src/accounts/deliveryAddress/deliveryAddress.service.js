@@ -28,19 +28,19 @@ class DeliveryAddressService {
                     phone: request?.descriptor?.phone?.trim(),
                     email: request?.descriptor?.email?.trim().toLowerCase()
                 },
-                gps: `${request?.address?.lat},${request?.address?.lng}`, 
+                gps: `${request?.address?.lat?.trim()},${request?.address?.lng?.trim()}`, 
                 defaultAddress: true, 
                 address: {
-                    areaCode: request?.address?.areaCode,
-                    door: request?.address?.door,
-                    building: request?.address?.building,
-                    street: request?.address?.street,
-                    city: request?.address?.city,
-                    state: request?.address?.state,
-                    tag: request?.address?.tag,
-                    country: request?.address?.country,
-                    lat: request?.address?.lat  , 
-                    lng: request?.address?.lng
+                    areaCode: request?.address?.areaCode?.trim(),
+                    door: request?.address?.door?.trim(),
+                    building: request?.address?.building?.trim(),
+                    street: request?.address?.street?.trim(),
+                    city: request?.address?.city?.trim(),
+                    state: request?.address?.state?.trim(),
+                    tag: request?.address?.tag?.trim(),
+                    country: request?.address?.country?.trim(),
+                    lat: request?.address?.lat?.trim()  , 
+                    lng: request?.address?.lng?.trim()
                 }, 
             };
     
@@ -169,19 +169,19 @@ class DeliveryAddressService {
                     phone: request?.descriptor?.phone.trim(),
                     email: request?.descriptor?.email?.trim().toLowerCase()
                 },
-                gps: `${request?.lat},${request?.lng}`,
+                gps: `${request?.address?.lat?.trim()},${request?.address?.lng?.trim()}`,
                 defaultAddress: request?.defaultAddress,
                 address: {
-                    areaCode: request?.address?.areaCode,
-                    door: request?.address?.door,
-                    building: request?.address?.building,
-                    street: request?.address?.street,
-                    city: request?.address?.city,
-                    state: request?.address?.state,
-                    tag: request?.address?.tag,
-                    country: request?.address?.country,
-                    lat: request?.address?.lat,
-                    lng: request?.address?.lng
+                    areaCode: request?.address?.areaCode?.trim(),
+                    door: request?.address?.door?.trim(),
+                    building: request?.address?.building?.trim(),
+                    street: request?.address?.street?.trim(),
+                    city: request?.address?.city?.trim(),
+                    state: request?.address?.state?.trim(),
+                    tag: request?.address?.tag?.trim(),
+                    country: request?.address?.country?.trim(),
+                    lat: request?.address?.lat?.trim(),
+                    lng: request?.address?.lng?.trim()
                 }
             };
     

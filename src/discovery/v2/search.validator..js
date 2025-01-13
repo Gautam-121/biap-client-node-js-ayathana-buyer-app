@@ -59,7 +59,7 @@ const discovery = {
     
         query("sortField")
             .optional()
-            .isIn(['quantity', 'price' , 'rating']).withMessage("Sort field must be either 'quantity' or 'price'"), // Enforce enum validation
+            .isIn(['quantity', 'price' , 'rating']).withMessage("Sort field must be either 'quantity', 'price' or 'rating"), // Enforce enum validation
     
         query("sortOrder")
             .optional()
@@ -94,6 +94,15 @@ const discovery = {
       ],
     attributes: [
         query("pageNumber")
+            .optional()
+            .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
+
+        query("limit")
+            .optional()
+            .isInt({ min: 1 }).withMessage("Limit must be an integer greater than 0"),
+    ],
+    attributesValues: [
+        query("attribute_code")
             .optional()
             .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
 
