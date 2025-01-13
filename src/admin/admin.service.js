@@ -177,9 +177,7 @@ class AdminService {
             }
 
             if(interest.status === "invited" && interest.inviteExpiry && interest.inviteExpiry > new Date()){
-                throw new BadRequestParameterError( 
-                    `An active invite already exists and has not expired. It will expire on ${interest.inviteExpiry.toLocaleString()}. Please wait until it expires before sending a new invite.`
-                )
+                throw new BadRequestParameterError(`An active invite already exists and has not expired.`)
             }
 
             if(interest.status === "registered"){
