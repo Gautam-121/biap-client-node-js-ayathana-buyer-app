@@ -359,7 +359,12 @@ class UserService {
     }
 
     async authWithGoogle(request, token) {
+        let session = null
         try {
+
+            // Start a transaction since we're doing user lookup and potential creation
+            session = await mongoose.startSession();
+            session.startTransaction();
 
             const { fcmToken } = request;
 
@@ -373,7 +378,7 @@ class UserService {
                 if (error.code === 'auth/id-token-expired') {
                     throw new UnauthenticatedError('Google token has expired')
                 } else if (error.code === 'auth/argument-error') {
-                    throw new BadRequestParameterError('Invalid Google token');
+                    throw new UnauthenticatedError('Invalid Google token');
                 } else {
                     console.error('Unexpected error during token verification:', error);
                     throw new UnauthenticatedError('Unexpected error during token verification:', error)
@@ -387,40 +392,49 @@ class UserService {
             }
 
             // Step 2: Check if user exists in the database
-            let user = await UserMongooseModel.findOne({ email: email?.trim()?.toLowerCase() });
+            let user = await UserMongooseModel.findOne({ email: email?.trim()?.toLowerCase() }, null, { session });
 
             if (user && user.status === "deleted") {
                 throw new UnauthorisedError('Your account has been Deleted. Please contact support.');
             }
 
            // Strict separation - Don't allow cross-provider login
-            if (user && user.authProvider == 'apple') {
+            if (user && user.authProvider !== 'google') {
                 throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
             }
 
             if (!user) {
                 // Step 3: If user doesn't exist, create a new one
-                user = await UserMongooseModel.create({
-                    name: name.trim().replace(/\s+/g, ' '), // Sanitize name, 
-                    email: email.trim().toLocaleLowerCase(),
-                    authProvider: 'google',
-                    providerId: uid,
-                    status: 'active',
-                    isEmailVerified: true,
-                    isFirstLogin: false,
-                    registeredAt: new Date(),
-                    lastLogin: new Date(),
-                    fcmTokens: fcmToken ? [{ token: fcmToken, device: deviceInfo, lastUsed: new Date() }] : []
-                });
+                user = await UserMongooseModel.create([
+                    {
+                        name: name.trim().replace(/\s+/g, ' '), // Sanitize name, 
+                        email: email.trim().toLocaleLowerCase(),
+                        authProvider: 'google',
+                        providerId: uid,
+                        status: 'active',
+                        isEmailVerified: true,
+                        isFirstLogin: true,
+                        registeredAt: new Date(),
+                        lastLogin: new Date(),
+                        fcmTokens: fcmToken ? [{ token: fcmToken, device: deviceInfo, lastUsed: new Date() }] : []
+                    }
+                ],{session});
+
+                user = user[0]; // Create returns an array when used with session
+
             } else {
                 // Step 4: If user exists, update the provider ID and last login time , check there status
                 user.providerId = uid;
                 user.lastLogin = new Date();
                 user.authProvider = 'google'
-                user.name = name.trim().replace(/\s+/g, ' ') || user.name;
+                user.name = name ? name.trim().replace(/\s+/g, ' ') : user.name
                 // Save user changes
-                await user.save();
+                await user.save({ session });
             }
+
+            // Commit transaction
+            await session.commitTransaction();
+            session.endSession();
 
             // Step 6: Generate access and refresh tokens for the user
             const accessToken = user.generateAccessToken();
@@ -428,12 +442,23 @@ class UserService {
 
         } catch (error) {
 
+            if(session){
+                // Rollback transaction on error
+                await session.abortTransaction();
+                session.endSession();
+            }
+
+            // Log the error with context
+            console.error('Google sign-in error:', {
+                error: error.message,
+                stack: error.stack,
+            });    
+
             if(error instanceof UnauthenticatedError) throw error
             else if(error instanceof BadRequestParameterError) throw error
             else if(error instanceof UnauthorisedError) throw error
             else if(error instanceof ConflictError) throw error
 
-            console.error('Google sign-in error:', error);
             throw error instanceof Error ? error : new Error('Google sign-in failed');
         }
     }
@@ -479,7 +504,7 @@ class UserService {
             }
 
             // Strict separation - Don't allow cross-provider login
-            if (user && user.authProvider == 'google') {
+            if (user && user.authProvider !== 'apple') {
                 throw new ConflictError(`This email is already registered with ${user.authProvider} authProvider. Please use ${user.authProvider} to sign in.`);
             }
 
@@ -545,12 +570,17 @@ class UserService {
     }
 
     async authWithPhone(request) {
+        let session = null
         try {
+
+            // Start a transaction since we're doing user lookup and potential creation
+            session = await mongoose.startSession();
+            session.startTransaction();
 
             const { phone  } = request;
             const trimmedPhone = phone.trim()
 
-            let otp = await OTP.findOne({ phone: trimmedPhone })
+            let otp = await OTP.findOne({ phone: trimmedPhone }).session(session);
 
             if (otp && otp.verifyId) {
                 const RATE_LIMIT_DURATION = 60000; // 1 minute
@@ -579,7 +609,11 @@ class UserService {
             otp.phone = trimmedPhone
             otp.verifyId = sendOtp.verifyId
             otp.lastVerificationAttempt = new Date();
-            await otp.save()
+            await otp.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
 
             return {
                 success: true,
@@ -587,6 +621,10 @@ class UserService {
             };
 
         } catch (error) {
+            if(session){
+                await session.abortTransaction();
+                session.endSession();
+            }
             if(error instanceof BadRequestParameterError) throw error
             console.log("error", error)
             throw new Error(error.message || "Verification otp send failed")
@@ -594,13 +632,18 @@ class UserService {
     }
 
     async authWithPhoneVerify(request) {
+        let session = null
         try {
+
+            // Start a transaction since we're doing user lookup and potential creation
+            session = await mongoose.startSession();
+            session.startTransaction();
 
             const { phone, otp , fcmToken } = request;
             const trimmedPhone = phone.trim();
 
             // Verify OTP
-            let otpRecord = await OTP.findOne({ phone: trimmedPhone });
+            const otpRecord = await OTP.findOne({ phone: trimmedPhone }).session(session);
 
             // Verify ID check
             if (!otpRecord || !otpRecord.verifyId) {
@@ -627,16 +670,17 @@ class UserService {
                 throw new BadRequestParameterError(response.message || "Invalid or expired OTP")
             }
 
-            await OTP.deleteOne({ _id: otpRecord._id });
+            await OTP.deleteOne({ _id: otpRecord._id }).session(session);
 
             let user = await UserMongooseModel.findOne({phone: trimmedPhone})
 
             if(!user){
-                user = await UserMongooseModel.create({
+                user = new UserMongooseModel({
                     phone: trimmedPhone,
                     status: 'active',
                     isPhoneVerified: true,
                     authProvider: "mobile",
+                    isFirstLogin: true,
                     fcmTokens: fcmToken ? [{
                         token: fcmToken,
                         device: deviceInfo,
@@ -645,11 +689,16 @@ class UserService {
                     registeredAt: new Date(),
                     lastLogin: new Date(),
                 });
+                await user.save({ session });
             }
             else{
                 user.lastLogin = new Date();
-                await user.save()
+                await user.save({ session });
             }
+
+            await session.commitTransaction();
+            session.endSession();
+
 
             const accessToken = await user.generateAccessToken();
 
@@ -661,6 +710,11 @@ class UserService {
             };
         } catch (error) {
 
+            if(session){
+                await session.abortTransaction();
+                session.endSession();
+            }
+
             if(error instanceof NoRecordFoundError) throw error
             else if(error instanceof BadRequestParameterError) throw error
             console.error('Phone Auth error', error);
@@ -669,7 +723,13 @@ class UserService {
     }
 
     async initiatePhoneUpdate(request, user) {
+        let session = null
         try {
+
+            // Start a transaction since we're doing user lookup and potential creation
+            session = await mongoose.startSession();
+            session.startTransaction();
+
             const { uid } = user.decodedToken;
             const { phone } = request;
     
@@ -678,7 +738,7 @@ class UserService {
             }
     
             const trimmedPhone = phone.trim();
-            const existingUser = await UserMongooseModel.findById(uid);
+            const existingUser = await UserMongooseModel.findById(uid).session(session);
     
             if (!existingUser) {
                 throw new NoRecordFoundError('User not found. Please try again.');
@@ -699,7 +759,7 @@ class UserService {
             }
     
             // Check for rate limiting
-            let otp = await OTP.findOne({ phone: trimmedPhone });
+            let otp = await OTP.findOne({ phone: trimmedPhone }).session(session);
             if (otp && otp.verifyId) {
                 const RATE_LIMIT_DURATION = 60000; // 1 minute
                 const timeSinceLastAttempt = Date.now() - new Date(otp.lastVerificationAttempt).getTime();
@@ -723,8 +783,11 @@ class UserService {
             otp.lastVerificationAttempt = new Date();
             existingUser.pendingPhone = trimmedPhone;
     
-            await existingUser.save();
-            await otp.save();
+            await existingUser.save({ session });
+            await otp.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
     
             return {
                 success: true,
@@ -733,21 +796,10 @@ class UserService {
             };
         } catch (error) {
             console.error('Error initiating phone update:', error);
-    
-            // Rollback changes if there was an error
-            try {
-                await UserMongooseModel.findByIdAndUpdate(user.decodedToken.uid, {
-                    $unset: {
-                        pendingPhone: "",
-                        verifyId: "",
-                        lastVerificationAttempt: "",
-                    },
-                });
-                console.error("Rolled back temporary phone update values due to an error.");
-            } catch (rollbackError) {
-                console.error("Failed to roll back changes:", rollbackError);
+            if(session){
+                await session.abortTransaction();
+                session.endSession();
             }
-    
             if (error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
                 throw error;
             }
@@ -757,13 +809,19 @@ class UserService {
     }
 
     async verifyPhoneVerification(request, user) {
+        let session = null
         try {
+
+            // Start a transaction since we're doing user lookup and potential creation
+            session = await mongoose.startSession();
+            session.startTransaction();
+
             const { otp, phone } = request;
             const { uid } = user.decodedToken;
             const trimmedPhone = phone.trim();
     
             // Fetch the existing user from the database
-            const existingUser = await UserMongooseModel.findById(uid);
+            const existingUser = await UserMongooseModel.findById(uid).session(session);
             if (!existingUser) {
                 throw new NoRecordFoundError('User not found. Please ensure you are logged in with the correct account.');
             }
@@ -773,7 +831,7 @@ class UserService {
             }
     
             // Fetch the OTP record associated with the phone number
-            const otpRecord = await OTP.findOne({ phone: trimmedPhone });
+            const otpRecord = await OTP.findOne({ phone: trimmedPhone }).session(session);
             if (!existingUser.pendingPhone || !otpRecord || !otpRecord.verifyId || existingUser.pendingPhone !== trimmedPhone) {
                 throw new BadRequestParameterError(`No pending phone verification found with phone ${trimmedPhone}. Please request a new verification code.`);
             }
@@ -795,21 +853,28 @@ class UserService {
             }
     
             // Clean up OTP record after successful verification
-            await OTP.deleteOne({ _id: otpRecord._id });
+            await OTP.deleteOne({ _id: otpRecord._id }).session(session);
     
             // Update user's phone number and verification status
             existingUser.phone = existingUser.pendingPhone;
             existingUser.pendingPhone = undefined;
             existingUser.isPhoneVerified = true;
             existingUser.status = "active";
-            await existingUser.save();
-    
+            await existingUser.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
             return {
                 success: true,
                 message: 'Your phone number has been successfully updated and verified.',
                 user: this.sanitizeUser(existingUser)
             };
         } catch (error) {
+            if(session){
+                await session.abortTransaction
+                session.endSession
+            }
             if (error instanceof BadRequestParameterError || error instanceof NoRecordFoundError) {
                 throw error;
             }
@@ -852,30 +917,54 @@ class UserService {
             }
     
             // First-time profile update checks
-            if (existingUser.isFirstLogin) {
+            if (existingUser.isFirstLogin && existingUser.authProvider === "mobile") {
                 if (!name || !email || !gender) {
                     throw new BadRequestParameterError('Please provide all required fields: name, email, and gender.');
                 }
-    
-                if (existingUser.authProvider !== 'mobile' && email !== existingUser.email) {
-                    throw new BadRequestParameterError(`Your email is linked to your ${existingUser.authProvider} account and cannot be changed here.`);
+
+                if (phone) {
+                    throw new BadRequestParameterError("Unable to update the phone number: It is already verified.");
                 }
             }
-    
-            // Email update check for non-first-time users
-            if (!existingUser.isFirstLogin && email) {
 
-                if (existingUser.authProvider !== 'mobile' && email !== existingUser.email) {
-                    throw new BadRequestParameterError(`Your email is linked to your ${existingUser.authProvider} account and cannot be changed here.`);
+            if(existingUser.isFirstLogin && existingUser.authProvider !== "mobile") {
+                if (!name || !phone || !gender) {
+                    throw new BadRequestParameterError('Please provide all required fields: name, phone, and gender.');
                 }
-
-                const existingEmailUser = await UserMongooseModel.findOne({
-                    email: email.trim().toLowerCase(),
-                    _id: { $ne: uid }
-                });
     
-                if (existingEmailUser) {
-                    throw new ConflictError('The provided email is already associated with another account.');
+                if (email) {
+                    throw new BadRequestParameterError("Unable to update the email: It is already verified.");
+                }
+            }
+
+            // Email update check for non-first-time users
+            if (!existingUser.isFirstLogin && email && existingUser.authProvider !== 'mobile') {
+                throw new BadRequestParameterError(`Your email is linked to your ${existingUser.authProvider} account and cannot be changed here.`);
+            }
+
+            // Phone update check for non-first-time users
+            if(!existingUser.isFirstLogin && phone && existingUser.isPhoneVerified){
+                throw new BadRequestParameterError("Unable to update the phone number: It is already verified.")
+            }
+
+            // Consolidate email and phone uniqueness checks
+            const queryConditions = [];
+            if (email && email.trim().toLowerCase() !== existingUser.email) {
+                queryConditions.push({ email: email.trim().toLowerCase(), _id: { $ne: uid } });
+            }
+            if (phone && phone.trim() !== existingUser.phone) {
+                queryConditions.push({ phone: phone.trim(), _id: { $ne: uid } });
+            }
+
+            if (queryConditions.length > 0) {
+                const conflictingUser = await UserMongooseModel.findOne({ $or: queryConditions });
+                if (conflictingUser) {
+                    if (conflictingUser.email === email.trim().toLowerCase()) {
+                        throw new ConflictError('The provided email is already associated with another account.');
+                    }
+                    if (conflictingUser.phone === phone.trim()) {
+                        throw new ConflictError('This phone number is already registered. Please use a different phone number.');
+                    }
                 }
             }
     
@@ -898,15 +987,6 @@ class UserService {
             }
     
             if (phone && phone.trim() !== existingUser.phone) {
-                const phoneExists = await UserMongooseModel.findOne({
-                    _id: { $ne: uid },
-                    phone: phone.trim()
-                });
-    
-                if (phoneExists) {
-                    throw new ConflictError('This phone number is already registered.Please use a different phone number.');
-                }
-    
                 existingUser.isPhoneVerified = false;
                 existingUser.phone = phone.trim();
                 existingUser.pendingPhone = phone.trim();

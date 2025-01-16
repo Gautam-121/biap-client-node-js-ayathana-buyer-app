@@ -342,7 +342,7 @@ class DeliveryAddressService {
                 await session.abortTransaction();
                 session.endSession();
             }
-            console.error('Error in UpdateDeliveryAddress:', {
+            console.error('Error in deleteDeliveryAddress:', {
                 error: err.message,
                 stack: err.stack
             });

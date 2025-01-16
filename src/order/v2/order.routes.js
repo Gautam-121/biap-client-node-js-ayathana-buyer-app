@@ -164,5 +164,7 @@ rootRouter.post('/v2/rating/:orderId', authentication(),  ratingController.rateO
 
 rootRouter.get('/v2/rating/:orderId', authentication(),  ratingController.getRating);
 
+rootRouter.get("/v2/cancellation-reasons", authentication(), cancelOrderController.getCancellation_reasons)
+
 
 export default rootRouter;

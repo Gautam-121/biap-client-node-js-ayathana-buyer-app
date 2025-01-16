@@ -1,22 +1,26 @@
 import { query } from "express-validator";
+import { domainEnum } from "../../lib/errors/errors.js";
+
+
 
 const discovery = {
     search : [
-        query("latitude")
-            .exists().withMessage("Latitude is required")
-            .isFloat({ min: -90, max: 90 }).withMessage("Latitude must be a valid coordinate between -90 and 90"),
-            
-        query("longitude")
-            .exists().withMessage("Longitude is required")
-            .isFloat({ min: -180, max: 180 }).withMessage("Longitude must be a valid coordinate between -180 and 180"),
-        
+        query('latitude')
+            .exists().withMessage('Latitude is required')
+            .trim()
+            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
+        query('longitude')
+            .exists().withMessage('Longitude is required')
+            .trim()
+            .toFloat().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
         query("pageNumber")
             .optional()
             .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
-    
-        query("limit")
+
+        query('limit')
             .optional()
-            .isInt({ min: 1 }).withMessage("Limit must be an integer greater than 0"),
+            .isInt({ min: 1, max: 100 })  // Add max limit
+            .withMessage('Limit must be between 1 and 100'),
     
         query("priceMin")
             .optional()
@@ -53,9 +57,11 @@ const discovery = {
     
         query("name")
             .optional()
-            .isString().withMessage("Name must be a valid string.")
+            .isString()
             .trim()
-            .matches(/^[a-zA-Z0-9\s]+$/).withMessage("Name must contain only letters, numbers, and spaces."),
+            .isLength({ min: 1, max: 100 })
+            .matches(/^[\p{L}\p{N}\s\-_']+$/u)
+            .withMessage("Name can contain letters, numbers, spaces, and basic punctuation"),
     
         query("sortField")
             .optional()
@@ -67,22 +73,35 @@ const discovery = {
     ],
     provider: [
         query('latitude')
-          .exists().withMessage('Latitude is required')
-          .isFloat({ min: -90, max: 90 }).withMessage('Latitude must be a valid latitude value between -90 and 90'),
+            .exists().withMessage('Latitude is required')
+            .trim()
+            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
         query('longitude')
-          .exists().withMessage('Longitude is required')
-          .isFloat({ min: -180, max: 180 }).withMessage('Longitude must be a valid longitude value between -180 and 180'),
+            .exists().withMessage('Longitude is required')
+            .trim()
+            .toFloat().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
         query('limit')
-          .optional()
-          .isInt({ min: 1 }).withMessage('Limit must be a positive integer'),
+            .optional()
+            .isInt({ min: 1, max: 100 })  // Add max limit
+            .withMessage('Limit must be between 1 and 100'),
         query('domain')
-          .optional()
-          .isString().withMessage('Domain must be a string'),
+            .optional()
+            .isString().withMessage('Domain must be a string')
+            .isIn(domainEnum)
+            .withMessage(`Context domain must be one of the following values: ${domainEnum.join(', ')}`),
         query("name")
-          .optional()
-          .isString().withMessage("Name must be a valid string.")
-          .trim()
-          .matches(/^[a-zA-Z0-9\s]+$/).withMessage("Name must contain only letters, numbers, and spaces."),
+            .optional()
+            .isString()
+            .trim()
+            .isLength({ min: 1, max: 100 })
+            .matches(/^[\p{L}\p{N}\s\-_']+$/u)
+            .withMessage("Name can contain letters, numbers, spaces, and basic punctuation"),
+
+        // Add afterKey validation if needed
+        query('afterKey')
+            .optional()
+            .isString()
+            .withMessage('Invalid pagination key')
     ],
     providerDetails: [
         query('providerId')
@@ -97,18 +116,22 @@ const discovery = {
             .optional()
             .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
 
-        query("limit")
+        query('limit')
             .optional()
-            .isInt({ min: 1 }).withMessage("Limit must be an integer greater than 0"),
+            .isInt({ min: 1, max: 100 })  // Add max limit
+            .withMessage('Limit must be between 1 and 100'),
     ],
     attributesValues: [
         query("attribute_code")
-            .optional()
-            .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
+            .exists().withMessage('attribute code is required'),
 
-        query("limit")
+        query("category")
             .optional()
-            .isInt({ min: 1 }).withMessage("Limit must be an integer greater than 0"),
+            .isString().withMessage("Category must be string"),
+
+        query("providerId")
+            .optional()
+            .isString().withMessage("ProviderId must be string"),
     ]
 } 
 

@@ -1,5 +1,6 @@
 import CancelOrderService from './cancelOrder.service.js';
 import BadRequestParameterError from '../../../lib/errors/bad-request-parameter.error.js';
+import { CANCELATION_REASONS } from "../../../utils/cancellation-return-reason.js"; 
 
 const cancelOrderService = new CancelOrderService();
 
@@ -49,6 +50,19 @@ class CancelOrderController {
         else
             throw new BadRequestParameterError();
 
+    }
+
+    getCancellation_reasons(req , res , next){
+        try {
+            res.json({
+                success: true,
+                message: "Cancel reasons send successfully",
+                data: CANCELATION_REASONS
+            });
+        } catch (error) {
+        console.log(error);
+        return res.status(400).send(error)
+      }
     }
 
 }

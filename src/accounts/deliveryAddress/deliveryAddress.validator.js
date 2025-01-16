@@ -79,19 +79,11 @@ const delivery =  {
         body('address.lat')
             .exists().withMessage('Latitude is required')
             .trim()
-            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90')
-            .custom(value => {
-                if (value === 0) throw new Error('Latitude cannot be zero');
-                return true;
-            }),
+            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
         body('address.lng')
             .exists().withMessage('Longitude is required')
             .trim()
             .toFloat().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180')
-            .custom(value => {
-                if (value === 0) throw new Error('Longitude cannot be zero');
-                return true;
-            }),
     ],
     updateDeliveryAddress : [
         // Descriptor validations
@@ -171,19 +163,11 @@ const delivery =  {
         body('address.lat')
             .exists().withMessage('Latitude is required')
             .trim()
-            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90')
-            .custom(value => {
-                if (value === 0) throw new Error('Latitude cannot be zero');
-                return true;
-        }),
+            .toFloat().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
         body('address.lng')
             .exists().withMessage('Longitude is required')
             .trim()
-            .toFloat().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180')
-            .custom(value => {
-                if (value === 0) throw new Error('Longitude cannot be zero');
-                return true;
-        }),
+            .toFloat().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
         body('defaultAddress')
             .optional()
             .isBoolean().withMessage('Default address must be a boolean'),

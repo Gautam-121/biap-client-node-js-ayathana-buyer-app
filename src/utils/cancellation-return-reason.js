@@ -1,29 +1,23 @@
 export const CANCELATION_REASONS = [
     {
       key: "001",
-      value:
-        "Price of one or more items have changed due to which buyer was asked to make additional payment",
-      isApplicableForCancellation: false,
+      value: "Price of one or more items have changed due to which buyer was asked to make additional payment",
     },
     {
       key: "003",
       value: "Product available at lower than order price",
-      isApplicableForCancellation: false,
     },
     {
       key: "006",
       value: "Order not received as per buyer app TAT SLA",
-      isApplicableForCancellation: false,
     },
     {
       key: "009",
       value: "Wrong product delivered",
-      isApplicableForCancellation: false,
     },
     {
       key: "010",
       value: "Buyer wants to modify address / other order details",
-      isApplicableForCancellation: false,
     },
   ];
   

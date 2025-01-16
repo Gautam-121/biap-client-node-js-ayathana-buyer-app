@@ -201,10 +201,26 @@ class SearchService {
   
       // Execute the search query
       const queryResults = await client.search({
+        // index: 'your_index_name',  // Explicitly specify index
         query: finalQuery,
         from: from,
         size: size,
-        sort: sort.length ? sort : undefined
+        sort: sort.length ? sort : undefined,
+        // track_total_hits: true,    // Ensure accurate total count for pagination
+        // timeout: '30s',            // Add timeout for long-running queries
+        // _source: {                 // Only fetch fields you need
+        //   includes: [
+        //     'item_details',
+        //     'provider_details',
+        //     'location_details',
+        //     'customisation_groups',
+        //     'attribute_key_values',
+        //     'in_stock'
+        //     // Add other fields you need
+        //   ]
+        // },
+        // search_after: searchRequest.searchAfter, // Optional: For deep pagination
+        // allow_partial_search_results: false      // Fail query if some shards fail
       });
 
       // Process results and add customization items
@@ -341,7 +357,8 @@ class SearchService {
         response: {
           count: queryResults.hits?.total?.value || 0,
           data: enhancedResults,
-          pages: Math.ceil((queryResults.hits?.total?.value || 0) / size)
+          pages: Math.ceil((queryResults.hits?.total?.value || 0) / size),
+          currentPage: page
         }
       };
     } catch (err) {
@@ -754,41 +771,17 @@ class SearchService {
   
   async getProviderDetails(searchRequest = {}, targetLanguage = "en") {
     try {
-      let matchQuery = [
-        {
-          match: {
-            language: targetLanguage,
-          },
-        },
-        {
-          match: {
-            "type": 'item',
-          },
-        }
-      ];
-  
-      if (searchRequest.providerId) {
-        matchQuery.push({
-          match: {
-            "provider_details.id": searchRequest.providerId,
-          },
-        });
+    // Use term queries for exact matches
+    const query_obj = {
+      bool: {
+        must: [
+          { term: { language: targetLanguage } },
+          { term: { type: 'item' } },
+          { term: { "provider_details.id": searchRequest.providerId } },
+          { term: { "location_details.id": searchRequest.locationId } }
+        ]
       }
-
-      if (searchRequest.locationId) {
-        matchQuery.push({
-          match: {
-            "location_details.id": searchRequest.locationId,
-          },
-        });
-      }
-  
-      // Define the Elasticsearch query
-      let query_obj = {
-        bool: {
-          must: matchQuery,
-        },
-      };
+    };
   
       // Define aggregations to get unique category IDs
       let aggr_query = {
@@ -796,18 +789,51 @@ class SearchService {
           terms: {
             field: "item_details.category_id",  // Make sure this field is indexed properly
             size: 1000  // Adjust the size based on the expected number of categories
-          }
+            // min_doc_count: 1  // Only include categories with at least one item
+          },
+        // provider_status: {
+        //     filter: {
+        //       term: { "provider_details.time.label": "enable" }
+        //     }
+        //   },
+        // location_status: {
+        //     filter: {
+        //       terms: { "location_details.time.label": ["enable", "open"] }
+        //     }
+        //   }
         }
       };
   
       let queryResults = await client.search({
+        // index: 'your_index_name',
         body: {
           query: query_obj,
           aggs: aggr_query,
           size: 1  // Only need 1 hit as we are using aggregations
+          // _source: {
+          //   includes: [
+          //     "context.domain",
+          //     "provider_details.*",
+          //     "location_details.*",
+          //     "fulfillment_details.*"
+          //   ]
+          // },
+          //timeout: '30s'
         }
       });
-  
+
+      // Check if provider and location exist and are active
+    //  const providerActive = queryResults.aggregations?.provider_status?.doc_count > 0;
+    //  const locationActive = queryResults.aggregations?.location_status?.doc_count > 0;
+
+    // if (!queryResults.hits?.hits?.length) {
+    //   throw new Error('Provider or location not found');
+    // }
+
+    // if (!providerActive || !locationActive) {
+    //   throw new Error('Provider or location is not active');
+    // }
+    
       // Extract provider details from the first hit (if available)
       let provider_details = null;
       if (queryResults.hits.hits.length > 0) {
@@ -947,6 +973,7 @@ class SearchService {
       let queryResults = await client.search({
         index: 'items',
         query: query_obj,
+        // timeout: '30s'
       });
   
       let item_details = null;
@@ -2094,14 +2121,15 @@ async getProviders(searchRequest, targetLanguage = "en") {
       unique_providers: {
         composite: {
           size: limit,
-          sources: [{ provider_id: { terms: { field: "provider_details.id" } } }],
+          sources: [{ provider_id: { terms: { field: "provider_details.id" , order: "asc" } } }],
           after: searchRequest.afterKey ? { provider_id: searchRequest.afterKey } : undefined
         },
         aggs: {
           unique_locations: {
             geohash_grid: {
               field: "location_details.gps",
-              precision: 5 // Adjust precision for location clustering
+              precision: 5, // Adjust precision for location clustering
+              size: 100  // Limit number of locations per provider
             },
             aggs: {
               location_details: {
@@ -2132,23 +2160,26 @@ async getProviders(searchRequest, targetLanguage = "en") {
         query: query_obj,
         aggs: aggr_query,
         size: 0,
+        // track_total_hits: true,
+        // timeout: '30s'
       },
     });
 
     // Process results
-    const unique_providers = queryResults.aggregations.unique_providers.buckets.map((bucket) => {
-      const providerDetails = bucket.products.hits.hits[0]._source.provider_details;
-      const uniqueLocations = bucket.unique_locations.buckets.map(locBucket => locBucket.location_details.hits.hits[0]._source.location_details);
+    const buckets = queryResults.aggregations?.unique_providers?.buckets || [] 
+    const unique_providers = buckets.map((bucket) => {
+      const providerDetails = bucket.products?.hits?.hits[0]?._source?.provider_details;
+      const uniqueLocations = bucket.unique_locations?.buckets?.map(locBucket => locBucket.location_details?.hits?.hits[0]?._source?.location_details);
 
       return {
         provider_details: providerDetails,
-        locations: uniqueLocations // List of all unique locations for this provider
+        locations: uniqueLocations || []
       };
     });
 
-    const totalCount = queryResults.aggregations.unique_provider_count.value;
+    const totalCount = queryResults.aggregations.unique_provider_count.value || 0;
     const totalPages = Math.ceil(totalCount / limit);
-    const afterKey = queryResults.aggregations.unique_providers.after_key;
+    const afterKey = queryResults?.aggregations?.unique_providers?.after_key;
 
     return {
       response: {

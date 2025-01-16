@@ -7,7 +7,7 @@ const router = new Router();
 const searchController = new SearchController();
 
 // search
-router.get(
+router.get( // done
     '/v2/search',authentication(), searchValidator.search , searchController.search,
 );
 
@@ -68,7 +68,7 @@ router.get(
 
 // get item attributes values
 router.get(
-    '/v2/attributeValues',authentication(),  searchController.getAttributesValues,
+    '/v2/attributeValues',authentication(), searchValidator.attributesValues,  searchController.getAttributesValues,
 );
 
 // get providers

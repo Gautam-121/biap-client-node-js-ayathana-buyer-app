@@ -322,6 +322,12 @@ class SearchController {
     * @return {callback}
     */
     getAttributesValues(req, res, next) {
+
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const searchRequest = req.query;
         searchService.getAttributesValues(searchRequest).then(response => {
             if(!response || response === null)

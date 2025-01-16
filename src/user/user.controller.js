@@ -52,7 +52,7 @@ class UserController {
 
         const token = authHeader.split(' ')[1];
 
-        if(!token) return next(new UnauthenticatedError(MESSAGES.LOGIN_ERROR_NO_TOKEN));
+        if(!token) return next( new UnauthenticatedError(MESSAGES.LOGIN_ERROR_NO_TOKEN) );
 
         const { body: request   } = req;
         userService.authWithGoogle(request, token).then(response => {
