@@ -25,7 +25,6 @@ class UpdateOrderController {
         const onUpdateOrderResponse = await Promise.all(
             orders.map(async order => {
                 try {
-
                     console.log("update orders--------------->",order);
                     return await cancelOrderService.update(order,user);
                 } catch (err) {

@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
      const bucket = process.env.S3_BUCKET;
      const publicPath = process.env.S3_PUBLIC_PATH;
 
-     console.log({version,region,bucket,publicPath})
+    console.log({version,region,bucket,publicPath})
 
 //TODO:move to ext config
      const s3 = new AWS.S3({

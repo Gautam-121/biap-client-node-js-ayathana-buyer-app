@@ -53,36 +53,42 @@ class UpdateOrderService {
         try {
 
 
-            const orderDetails = await getOrderById(orderRequest.order.id);
+            const orderDetails = await getOrderById(orderRequest.id);
 
             if(orderDetails[0].userId !==user.decodedToken.uid){
                 return []
             }
 
-            if (orderDetails[0].state !== "Completed" && orderRequest?.order?.items[0]?.tags?.update_type === "return") {
+            if (orderDetails[0].state !== "Completed") {
                 throw new BadRequestParameterError("The order must be completed before initiating a return.");
             }
 
-            for(let item of orderRequest.order.item){
-                const data = orderDetails.items.find(product => product.id === item.id)
+            for(let item of orderRequest.item){
+                const data = orderDetails[0].items.find(product => product.id === item.id)
 
                 if (!data) 
                     throw new BadRequestParameterError(`The item with ID ${item.id} is not associated with this order.`);
+
+                if(item?.quantity > data?.quantity?.count){
+                    throw new BadRequestParameterError("Return quantity cannot exceed purchased quantity.")
+                }
                 
                 if (!data?.product["@ondc/org/returnable"]) {
                     throw new BadRequestParameterError(`The item with ID ${item.id} is not eligible for return as per seller policy.`);
                 }
 
                 // Parse updatedAt timestamp and calculate return window
-                const updatedAt = parseISO(orderDetails.updatedAt);
+                const updatedAt = parseISO(orderDetails[0].updatedAt);
                 const returnWindowDuration = data?.product["@ondc/org/return_window"]; // Example: "P7D"
                 const returnWindowDate = add(updatedAt, parseDuration(returnWindowDuration));
 
                 if (isBefore(new Date(), returnWindowDate) === false) {
-                    throw new BadRequestParameterError(`The return window for item ID ${item.id} has expired. Return requests must be made within the allowed timeframe.`);
+                    throw new BadRequestParameterError(`The return window for item ID ${item.id} has expired.`);
                 }
-            }
 
+                item.tags["ttl_approval"] = returnWindowDate ? returnWindowDate : ""
+                item.tags["parent_item_id"] = data?.product?.parent_item_id ? data?.product?.parent_item_id : ""
+            }
 
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
@@ -98,10 +104,30 @@ class UpdateOrderService {
             orderRequest.context = { ...context };
             orderRequest.message = {
                 order: {
-                    ...orderRequest.order,
-                    state: orderDetails[0]?.state
+                    id: orderRequest.id,
+                    state: orderDetails[0]?.state,
+                    provider: {
+                        id: orderDetails[0]?.provider?.id
+                    },
+                    items: orderRequest.items.map(item=>{
+                        return {
+                            id: item?.id,
+                            quantity:{
+                                count: item?.quantity
+                            },
+                            tags:{
+                                update_type: "return",
+                                reason_code: item?.tags?.reason_code,
+                                ttl_approval: item?.tags?.ttl_approval,
+                                ttl_reverseqc: "P3D",
+                                parent_item_id: item?.tags?.parent_item_id,
+                                image: item?.tags?.image
+                            }
+                        }
+                    })
+
                 },
-                update_target: orderRequest?.update_target
+                update_target: "item"
             };
 
             const data = {context:context,data:orderRequest}

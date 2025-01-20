@@ -40,7 +40,7 @@ class CartService {
 
            let cart = await Cart.findOne({userId:data.userId,location_id:data.location_details?.id});
 
-           const processedData = {
+            const processedData = {
                 id: data.itemId,
                 local_id: items?.local_id,
                 bpp_id: items?.bpp_details?.bpp_id,
@@ -71,6 +71,17 @@ class CartService {
            let proccesingData = validationResult ? {...validationResult.processedData , userId : data.userId } : processedData
 
            if(cart){
+
+            // Check if the item with the same customizations already exists
+            let existingCartItem = await CartItem.findOne({
+                cart: cart._id,
+                "item.id": data.itemId,
+            });
+
+            if(existingCartItem && existingCartItem.customisationState?.length === existingCartItem){
+                throw new BadRequestParameterError("Item with same customization already exists. Please update it instead.")
+            }
+
                //add items to the cart
                let cartItem = new CartItem();
                cartItem.cart=cart._id;
@@ -86,7 +97,6 @@ class CartService {
                cartItem.item = proccesingData;
                return  await cartItem.save();
            }
-
         }
         catch (err) {
             if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){

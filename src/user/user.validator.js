@@ -26,17 +26,17 @@ const user =  {
             .isMobilePhone(["en-IN"]).withMessage('Valid Indian phone number is required')
     ],
     updateDetails: [
-        check().custom((_, { req }) => {
-            if (!req.body.name && !req.body.email && !req.body.phone && !req.body.gender) {
-                throw new Error('At least one field (name , email , phone , gender) must be provided');
-            }
-            return true;
-        }),
         body('name')
             .optional()
             .trim()
-            .isLength({ min: 2, max: 50 })
-            .withMessage('Name must be between 2 and 50 characters'),
+            .isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters')
+            .matches(/^(?!\d)[a-zA-Z0-9]+$/).withMessage('Name must not start with a number and should contain alphanumeric characters')
+            .custom(value => {
+                if (/^\d+$/.test(value)) {
+                    throw new Error('Name should not be only numbers');
+                }
+                return true;
+            }),
         body('email')
             .optional()
             .trim()
