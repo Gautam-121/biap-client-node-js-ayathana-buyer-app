@@ -16,16 +16,13 @@ const discovery = {
         query("pageNumber")
             .optional()
             .isInt({ min: 1 }).withMessage("Page number must be an integer greater than 0"),
-
         query('limit')
             .optional()
             .isInt({ min: 1, max: 100 })  // Add max limit
             .withMessage('Limit must be between 1 and 100'),
-    
         query("priceMin")
             .optional()
             .isFloat({ min: 0 }).withMessage("Minimum price must be a positive number"),
-        
         query("priceMax")
             .optional()
             .isFloat({ min: 0 }).withMessage("Maximum price must be a positive number.")

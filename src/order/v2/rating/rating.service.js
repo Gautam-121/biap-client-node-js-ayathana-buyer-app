@@ -10,6 +10,8 @@ import {
     addOrUpdateOrderWithTransactionIdAndProvider,
     getOrderById, getOrderRequest, saveOrderRequest
 } from "../../v1/db/dbService.js";
+import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
+import NoRecordFoundError from "../../../lib/errors/no-record-found.error.js";
 
 class RatingService {
 
@@ -20,13 +22,17 @@ class RatingService {
     async rateOrder(rating,id) {
         try {
 
+            if(!id){
+                throw new BadRequestParameterError("Missing OrderId")
+            }
 
             // const { context: requestContext, message } = rating || {};
 
             const orderDetails = await getOrderById(id);
 
-            //save rating in db
-
+            if(!orderDetails){
+                throw new NoRecordFoundError("Order not found with id:${id}")
+            }
 
             console.log('domain--------XX------>',orderDetails)
 
@@ -36,6 +42,27 @@ class RatingService {
         // type:{ type: String },
 
             for(let ratingDetails of rating){
+                switch(ratingDetails.rating_category){
+                    case "order": 
+                        if(ratingDetails.id !== orderDetails[0].id){
+                            throw new BadRequestParameterError("The provided Order ID does not match the actual Order ID")
+                        }
+                    break;
+                    case "item": 
+                        const item =  orderDetails[0].items.find(item => item.id === orderDetails.id)
+                        if(!item) throw new BadRequestParameterError("The Item ID provided does not belong to this order")
+                    break;
+                    case "provider": 
+                        if(ratingDetails.id !== orderDetails[0]?.provider?.id){
+                            throw new BadRequestParameterError("The Provider ID does not match the provider associated with this order")
+                        }
+                    break;
+                    case "fullfilment": 
+                        if(ratingDetails.id !== orderDetails[0]?.fulfillments?.[0]?.id){
+                            throw new BadRequestParameterError("The Fulfillment ID does not match the fulfillment associated with this order")
+                        }
+                    break;
+                }
                 let oldRating = await Rating.findOne({orderId:id,type:ratingDetails.rating_category,entityId:ratingDetails.id});
                 console.log("old rating",oldRating)
                 if(oldRating){
@@ -69,6 +96,8 @@ class RatingService {
             );
         }
         catch (err) {
+
+            if(err instanceof  BadRequestParameterError) throw err
             throw err;
         }
     }

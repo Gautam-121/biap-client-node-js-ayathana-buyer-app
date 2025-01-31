@@ -1,6 +1,8 @@
 import UpdateOrderService from './updateOrder.service.js';
 import BadRequestParameterError from '../../../lib/errors/bad-request-parameter.error.js';
 import { validationResult } from "express-validator"
+import { RETURN_REASONS } from "../../../utils/cancellation-return-reason.js"; 
+
 
 const cancelOrderService = new UpdateOrderService();
 
@@ -64,6 +66,19 @@ class UpdateOrderController {
         else
             throw new BadRequestParameterError();
 
+    }
+
+    getReturn_reasons(req , res , next){
+        try {
+            res.json({
+                success: true,
+                message: "Return reasons send successfully",
+                data: RETURN_REASONS
+            });
+        } catch (error) {
+            console.log(error);
+            return res.status(400).send(error)
+        }
     }
 
 }

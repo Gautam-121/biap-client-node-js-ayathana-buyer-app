@@ -107,7 +107,7 @@ const getOrderById = async (orderId) => {
     }).lean();
 
     if (!order.length)
-        throw new NoRecordFoundError();
+        throw new NoRecordFoundError(`Order not found with id ${orderId}`);
     else{
         // order = order.toJSON();
         let orderHistory =await OrderHistory.find({orderId:orderId})

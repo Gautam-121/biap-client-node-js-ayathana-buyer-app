@@ -18,10 +18,10 @@ class BppRatingService {
                 }
             };
             
-            console.log("select request",JSON.stringify(rateRequest))
+            console.log("rating request",JSON.stringify(rateRequest))
             const response = await protocolRating(rateRequest);
 
-            return { context: context, message: response.message };
+            return { context: context, message: response.message , error: response?.error };
         }
         catch (err) {
 

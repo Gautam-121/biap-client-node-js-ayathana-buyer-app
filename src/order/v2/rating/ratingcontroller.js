@@ -1,5 +1,6 @@
 import RatingService from './rating.service.js';
 import BadRequestParameterError from '../../../lib/errors/bad-request-parameter.error.js';
+import {validationResult} from "express-validator"
 
 const ratingService = new RatingService();
 
@@ -13,6 +14,12 @@ class RatingController {
     * @return {callback}
     */
     rateOrder(req, res, next) {
+
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+        
         const { body: request,params } = req;
         const { orderId } = params;
         ratingService.rateOrder(request,orderId).then(response => {

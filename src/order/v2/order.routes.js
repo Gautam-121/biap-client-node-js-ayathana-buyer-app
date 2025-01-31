@@ -7,6 +7,7 @@ import orderHistoryValidator from "./history/orderHistory.validator.js"
 import statusValidator from './status/statusOrder.validator.js';
 import cancelValidator from './cancel/cancelOrder.validator.js';
 import updateOrderValidator from './update/updateOrder.validator.js';
+import ratingValidator from "./rating/rating.validator.js"
 
 import CancelOrderController from './cancel/cancelOrder.controller.js';
 import ConfirmOrderController from './confirm/confirmOrder.controller.js';
@@ -160,11 +161,14 @@ rootRouter.get('/v2/orders/:orderId', authentication(), orderHistoryValidator.or
 
 rootRouter.post('/v2/orders/push/oms', confirmOrderController.orderPushToOMS);
 
-rootRouter.post('/v2/rating/:orderId', authentication(),  ratingController.rateOrder);
+rootRouter.post('/v2/rating/:orderId', authentication(), ratingValidator.rateRating,  ratingController.rateOrder);
 
 rootRouter.get('/v2/rating/:orderId', authentication(),  ratingController.getRating);
 
 rootRouter.get("/v2/cancellation-reasons", authentication(), cancelOrderController.getCancellation_reasons)
+
+rootRouter.get("/v2/return-reasons", authentication(), updateOrderController.getReturn_reasons)
+
 
 
 export default rootRouter;

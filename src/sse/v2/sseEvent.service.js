@@ -12,9 +12,9 @@ class SseEvent extends EventEmitter {
             this.initial = [];
 
         if (!_.isEmpty(options))
-            this.options = { ...options };
+            this.options = {  ...options ,  keepaliveInterval: 15000, keepaliveMessage: 'ping' }; // added keepaliveInterval , keepAliveMessage
         else
-            this.options = { isSerialized: true };
+            this.options = { isSerialized: true , keepaliveInterval: 15000, keepaliveMessage: 'ping'}; // added keepaliveInterval , keepAliveMessage
 
         this.init = this.init.bind(this);
     }
@@ -45,6 +45,26 @@ class SseEvent extends EventEmitter {
 
         // Increase number of event listeners on init
         this.setMaxListeners(this.getMaxListeners() + 2);
+
+        // Add keepalive interval - Added this one
+        const keepaliveTimer = setInterval(() => {
+            res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({messageId: "", count: 0})}\n\n`);
+        }, this.options.keepaliveInterval);
+
+         // Add error handling
+        res.on('error', (error) => {
+            clearInterval(keepaliveTimer);
+            this.emit('error', error);
+        });
+
+        // Add connection detection
+        const detectDisconnection = setInterval(() => {
+            if (res.writableEnded || !res.writableFinished) {
+                clearInterval(keepaliveTimer);
+                clearInterval(detectDisconnection);
+                req.emit('close');
+            }
+        }, 30000);
 
         const dataListener = data => {
 
@@ -86,6 +106,8 @@ class SseEvent extends EventEmitter {
 
         // Remove listeners and reduce the number of max listeners on client disconnect
         req.on('close', () => {
+            clearInterval(keepaliveTimer); // added this line
+            clearInterval(detectDisconnection); // Add this line
             this.removeListener('data', dataListener);
             this.removeListener('serialize', serializeListener);
             this.setMaxListeners(this.getMaxListeners() - 2);

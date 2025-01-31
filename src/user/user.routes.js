@@ -32,8 +32,8 @@ rootRouter.post( //
 rootRouter.patch( //
     '/v1/user/phone', 
     authentication(),
-    userValidator.phoneUpdate,
-    userController.initiatePhoneUpdate,
+    userValidator.phoneVerify,
+    userController.initiatePhoneVerify,
 );
 
 rootRouter.post( //

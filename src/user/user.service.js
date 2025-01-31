@@ -648,7 +648,7 @@ class UserService {
             // Verify ID check
             if (!otpRecord || !otpRecord.verifyId) {
                 throw new BadRequestParameterError(
-                    `No verification in progress with phone: ${trimmedPhone}. Please request a new verification OTP.`
+                    `No verification in progress with phone: ${trimmedPhone}`
                 );
             }
 
@@ -659,7 +659,7 @@ class UserService {
                 if (timeSinceRequest > VERIFICATION_TIMEOUT) {
                     // await OTP.deleteOne({ _id: otpRecord._id });
                     throw new BadRequestParameterError(
-                        'Verification code has expired. Please request a new verification OTP.'
+                        'Verification code has expired'
                     );
                 }
             }
@@ -715,9 +715,7 @@ class UserService {
                 session.endSession();
             }
 
-            if(error instanceof NoRecordFoundError) throw error
-            else if(error instanceof BadRequestParameterError) throw error
-            console.error('Phone Auth error', error);
+            if(error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) throw error
             throw new Error(error.message || 'Phone Auth failed');
         }
     }
@@ -791,7 +789,7 @@ class UserService {
     
             return {
                 success: true,
-                message: `A verification code has been sent to ${trimmedPhone}. Please verify to continue.`,
+                message: `A verification code has been sent to ${trimmedPhone}`,
                 requiresPhoneVerification: true
             };
         } catch (error) {
@@ -804,7 +802,7 @@ class UserService {
                 throw error;
             }
     
-            throw new Error('An error occurred while updating your phone number. Please try again later.');
+            throw new Error('An error occurred while sending otp.');
         }
     }
 
@@ -823,7 +821,7 @@ class UserService {
             // Fetch the existing user from the database
             const existingUser = await UserMongooseModel.findById(uid).session(session);
             if (!existingUser) {
-                throw new NoRecordFoundError('User not found. Please ensure you are logged in with the correct account.');
+                throw new NoRecordFoundError('User not found');
             }
 
             if(existingUser.pendingPhone !== trimmedPhone){
@@ -833,7 +831,7 @@ class UserService {
             // Fetch the OTP record associated with the phone number
             const otpRecord = await OTP.findOne({ phone: trimmedPhone }).session(session);
             if (!existingUser.pendingPhone || !otpRecord || !otpRecord.verifyId || existingUser.pendingPhone !== trimmedPhone) {
-                throw new BadRequestParameterError(`No pending phone verification found with phone ${trimmedPhone}. Please request a new verification code.`);
+                throw new BadRequestParameterError(`No pending phone verification found with phone ${trimmedPhone}`);
             }
     
             // Check if the OTP has expired
@@ -842,14 +840,14 @@ class UserService {
                 const timeSinceRequest = Date.now() - new Date(existingUser.lastVerificationAttempt).getTime();
                 if (timeSinceRequest > VERIFICATION_TIMEOUT) {
                     // await OTP.deleteOne({ _id: otpRecord._id });
-                    throw new BadRequestParameterError('The verification code has expired. Please request a new one.');
+                    throw new BadRequestParameterError('The verification code has expired');
                 }
             }
     
             // Verify the OTP
             const response = await this.verifyOtp(otpRecord.verifyId, otp);
             if (!response.success) {
-                throw new BadRequestParameterError('Verification failed. Please ensure you entered the correct code.');
+                throw new BadRequestParameterError( response.message || 'Verification failed.');
             }
     
             // Clean up OTP record after successful verification
@@ -913,7 +911,7 @@ class UserService {
     
             const existingUser = await UserMongooseModel.findById(uid);
             if (!existingUser) {
-                throw new NoRecordFoundError('User not found. Please try again.');
+                throw new NoRecordFoundError('User not found');
             }
     
             // First-time profile update checks
@@ -932,7 +930,7 @@ class UserService {
                     throw new BadRequestParameterError('Please provide all required fields: name, phone, and gender.');
                 }
     
-                if (email) {
+                if (email && email !== existingUser.email) {
                     throw new BadRequestParameterError("Unable to update the email: It is already verified.");
                 }
             }
@@ -943,9 +941,9 @@ class UserService {
             }
 
             // Phone update check for non-first-time users
-            if(!existingUser.isFirstLogin && phone && existingUser.isPhoneVerified){
-                throw new BadRequestParameterError("Unable to update the phone number: It is already verified.")
-            }
+            // if(!existingUser.isFirstLogin && phone && existingUser.isPhoneVerified){
+            //     throw new BadRequestParameterError("Unable to update the phone number: It is already verified.")
+            // }
 
             // Consolidate email and phone uniqueness checks
             const queryConditions = [];
@@ -963,7 +961,7 @@ class UserService {
                         throw new ConflictError('The provided email is already associated with another account.');
                     }
                     if (conflictingUser.phone === phone.trim()) {
-                        throw new ConflictError('This phone number is already registered. Please use a different phone number.');
+                        throw new ConflictError('This phone number is already registered');
                     }
                 }
             }
@@ -1030,8 +1028,6 @@ class UserService {
             const existUser = await UserMongooseModel.findById(userId).session(session);
     
             if (!existUser) {
-                await session.abortTransaction();
-                session.endSession();
                 throw new NoRecordFoundError("User not found");
             }
     
@@ -1257,7 +1253,7 @@ class UserService {
             });
             if (error instanceof NoRecordFoundError) throw error;
     
-            throw new Error('An unexpected error occurred while checking the invitation status. Please try again later.');
+            throw new Error(error.message || 'An unexpected error occurred.');
         }
     }
     
@@ -1302,10 +1298,8 @@ class UserService {
                 error: error.message,
                 stack: error.stack,
             });
-            if (error instanceof NoRecordFoundError) throw error;
-            if (error instanceof BadRequestParameterError) throw error;
-    
-            throw new Error('An unexpected error occurred while validating the invitation code. Please try again later.');
+            if (error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) throw error;    
+            throw new Error( error.message || 'An unexpected error occurred.');
         }
     }
 
@@ -1334,11 +1328,6 @@ class UserService {
                 throw new BadRequestParameterError("The invite email already complete registration")
             }
     
-            // Check if the invite code has expired
-            if(invite.inviteExpiry && invite.inviteExpiry > new Date()){
-                throw new BadRequestParameterError( `An active invite already exists and has not expired.`)
-            }
-
             // Generate Invite Code
             const inviteCode = this.generateInviteCode();
 
@@ -1369,9 +1358,7 @@ class UserService {
                 stack: error.stack,
             });
 
-            if (error instanceof NoRecordFoundError) throw error;
-            if (error instanceof BadRequestParameterError) throw error;
-    
+            if (error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) throw error;    
             throw new Error(error.message || "Error while sending invite link");
         }
     }

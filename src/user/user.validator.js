@@ -18,7 +18,7 @@ const user =  {
             .notEmpty().withMessage('OTP is required')
             .isString().withMessage('OTP must be a string')
     ],
-    phoneUpdate:[
+    phoneVerify:[
         body('phone')
             .trim()
             .notEmpty().withMessage('Phone is required')
@@ -87,45 +87,41 @@ const user =  {
         body('name')
             .trim()
             .notEmpty().withMessage('Name is required')
-            .isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters')
-            .matches(/^(?!\d)[a-zA-Z0-9]+$/).withMessage('Name must not start with a number and should contain alphanumeric characters')
-            .custom(value => {
-                if (/^\d+$/.test(value)) {
-                    throw new Error('Name should not be only numbers');
-                }
-                return true;
-            }),
+            .isLength({ min: 2, max: 50 })
+            .withMessage('Name must be between 2 and 50 characters')
+            .matches(/^[a-zA-Z\s]*$/)
+            .withMessage('Name can only contain letters and spaces'),
         body('email')
             .trim()
             .notEmpty().withMessage('email is required')
             .isEmail()
-            .withMessage('must be valid email')
+            .withMessage('Please provide a valid email')
     ],
     checkInviteUser: [
         body('email')
             .trim()
             .notEmpty().withMessage('email is required')
             .isEmail()
-            .withMessage('must be valid email'),
+            .withMessage('Please provide a valid email')
     ],
     validateInviteCode: [
         body('email')
             .trim()
             .notEmpty().withMessage('email is required')
             .isEmail()
-            .withMessage('must be valid email'),
+            .withMessage('Please provide a valid email'),
         body('inviteCode')
             .isLength({ min: 6 }) // Minimum length considering 8 chars + timestamp
             .withMessage("Invite code must be 16 character long")
             .isAlphanumeric()
-            .withMessage('Invalid invite code format. It should be alphanumeric and of correct length.'),
+            .withMessage('Invalid invite code format'),
     ],
     resendInviteCode: [
         body('email')
             .trim()
             .notEmpty().withMessage('email is required')
             .isEmail()
-            .withMessage('must be valid email'),
+            .withMessage('Please provide a valid email'),
     ]
     
 }

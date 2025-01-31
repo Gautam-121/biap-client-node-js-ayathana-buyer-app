@@ -82,7 +82,7 @@ class UserController {
         });
     }
 
-    initiatePhoneUpdate(req,res,next) {
+    initiatePhoneVerify(req,res,next) {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             throw new BadRequestParameterError(errors.array()[0].msg);
