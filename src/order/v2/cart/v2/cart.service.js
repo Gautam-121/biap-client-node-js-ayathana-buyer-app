@@ -1,5 +1,6 @@
 import Cart from '../../db/cart.js'
 import CartItem from '../../db/items.js'
+import mongoose from "mongoose"
 import SearchService from "../../../../discovery/v2/search.service.js";
 import CartValidator from './cart.validator.js';
 import NoRecordFoundError from '../../../../lib/errors/no-record-found.error.js';
@@ -8,37 +9,41 @@ import BadRequestParameterError from '../../../../lib/errors/bad-request-paramet
 const bppSearchService = new SearchService();
 class CartService {
 
+
     async addItem(data) {
+        const session = await mongoose.startSession(); // Start a new session
         try {
-                let items =  await bppSearchService.getItemDetails(
-                    {id:data.itemId}
-                );
-                if(!items){
-                    throw new NoRecordFoundError(`item not found with id:${data.itemId}`);
-                }
+            session.startTransaction(); // Begin the transaction
 
-                const checkQuantity = validateQuantity(items , data)
+            let items = await bppSearchService.getItemDetails({ id: data.itemId }).session(session);
+            if (!items) {
+                throw new NoRecordFoundError(`Item not found with id: ${data.itemId}`);
+            }
 
-                if(checkQuantity?.status==400){
-                    throw new BadRequestParameterError(checkQuantity?.error?.message);
-                }
+            const checkQuantity = validateQuantity(items, data);
+            if (checkQuantity?.status === 400) {
+                throw new BadRequestParameterError(checkQuantity?.error?.message);
+            }
 
-            if(items?.customisation_groups.length==0 && items?.customisation_items?.length == 0 && data.customizations?.length>0){
-                throw new BadRequestParameterError('No custumzation availabe for item');
+            if (
+                items?.customisation_groups.length === 0 &&
+                items?.customisation_items?.length === 0 &&
+                data.customizations?.length > 0
+            ) {
+                throw new BadRequestParameterError('No customization available for item');
             }
 
             let validationResult = null;
-
-            if(items?.customisation_groups.length!==0 && items?.customisation_items?.length !== 0){
+            if (items?.customisation_groups.length !== 0 && items?.customisation_items?.length !== 0) {
                 const validator = new CartValidator(items.customisation_groups, items.customisation_items);
-                validationResult = validator.validateAddToCartRequest(data , items);
+                validationResult = validator.validateAddToCartRequest(data, items);
             }
 
-            if (validationResult!==null && !validationResult.isValid) {
+            if (validationResult !== null && !validationResult.isValid) {
                 throw new BadRequestParameterError(validationResult.errors?.[0]);
             }
 
-           let cart = await Cart.findOne({userId:data.userId,location_id:data.location_details?.id});
+            let cart = await Cart.findOne({ userId: data.userId, location_id: data.location_details?.id }).session(session);
 
             const processedData = {
                 id: data.itemId,
@@ -49,146 +54,169 @@ class CartService {
                 tags: items?.item_details?.tags,
                 contextCity: items?.context?.city,
                 quantity: {
-                    count: data.quantity
+                    count: data.quantity,
                 },
                 provider: {
                     id: items?.provider_details?.id,
                     local_id: items?.provider_details?.local_id,
                     locations: items?.locations,
-                    ...items?.provider_details
+                    ...items?.provider_details,
                 },
-                product:{
+                product: {
                     id: items?.id,
-                    ...items?.item_details
+                    ...items?.item_details,
                 },
-                customizations:null,
-                customisationState:[],
-                basePrice: (parseFloat(items.item_details?.price?.value) || 0) * data.quantity ,
+                customizations: null,
+                customisationState: [],
+                basePrice: (parseFloat(items.item_details?.price?.value) || 0) * data.quantity,
                 totalPrice: (parseFloat(items.item_details?.price?.value) || 0) * data.quantity,
-                userId: data.userId
+                userId: data.userId,
             };
 
-           let proccesingData = validationResult ? {...validationResult.processedData , userId : data.userId } : processedData
+            let processingData = validationResult ? { ...validationResult.processedData, userId: data.userId } : processedData;
 
-           if(cart){
+            if (cart) {
+                // Check if the item with the same customizations already exists
+                let existingCartItem = await CartItem.findOne({
+                    cart: cart._id,
+                    "item.id": data.itemId,
+                }).session(session);
 
-            // Check if the item with the same customizations already exists
-            let existingCartItem = await CartItem.findOne({
-                cart: cart._id,
-                "item.id": data.itemId,
-            });
+                // Normal item without customization
+                if (existingCartItem && items?.customisation_groups.length === 0 && items?.customisation_items?.length === 0) {
+                    throw new BadRequestParameterError('Item in cart already exists. Please update it instead');
+                }
 
-            if(existingCartItem && existingCartItem.customisationState?.length === existingCartItem){
-                throw new BadRequestParameterError("Item with same customization already exists. Please update it instead.")
+                // Add the item to the cart
+                let cartItem = new CartItem();
+                cartItem.cart = cart._id;
+                cartItem.item = processingData;
+                cartItem.location_id = data.location_details?.id;
+                await cartItem.save({ session }); // Save within the transaction
+            } else {
+                // Create a new cart
+                let newCart = await new Cart({ userId: data.userId, location_id: data.location_details?.id }).save({ session });
+
+                // Add the item to the cart
+                let cartItem = new CartItem();
+                cartItem.cart = newCart._id;
+                cartItem.location_id = data.location_details?.id;
+                cartItem.item = processingData;
+                await cartItem.save({ session }); // Save within the transaction
             }
 
-               //add items to the cart
-               let cartItem = new CartItem();
-               cartItem.cart=cart._id;
-               cartItem.item = proccesingData;
-               cartItem.location_id =data.location_details?.id
-              return  await cartItem.save();
-           }else{
-               //create a new cart
-               let cart =await new Cart({userId:data.userId,location_id:data.location_details?.id}).save()
-               let cartItem = new CartItem();
-               cartItem.cart=cart._id;
-               cartItem.location_id =data.location_details?.id
-               cartItem.item = proccesingData;
-               return  await cartItem.save();
-           }
-        }
-        catch (err) {
-            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
-                throw err
+            await session.commitTransaction(); // Commit the transaction
+            session.endSession(); // End the session
+            return { success: true, message: 'Item added to cart successfully' };
+        } catch (err) {
+            await session.abortTransaction(); // Abort the transaction on error
+            session.endSession(); // End the session
+
+            if (err instanceof NoRecordFoundError || err instanceof BadRequestParameterError) {
+                throw err;
             }
             throw err;
         }
     }
 
     async updateItem(data) {
+        const session = await mongoose.startSession(); // Start a new session
         try {
-            let items =  await bppSearchService.getItemDetails(
-                {id:data.itemId}
-            );
-            if(!items){
-                throw new NoRecordFoundError(`item not found with id:${data.itemId}`);
+            session.startTransaction(); // Begin the transaction
+
+            // Fetch item details within the transaction
+            let items = await bppSearchService.getItemDetails({ id: data.itemId }).session(session);
+            if (!items) {
+                throw new NoRecordFoundError(`Item not found with id: ${data.itemId}`);
             }
 
-            const checkQuantity = validateQuantity(items , data)
-
-            if(checkQuantity?.status==400){
-                throw new BadRequestParameterError(checkQuantity?.error?.message)
+            // Validate quantity
+            const checkQuantity = validateQuantity(items, data);
+            if (checkQuantity?.status === 400) {
+                throw new BadRequestParameterError(checkQuantity?.error?.message);
             }
 
-            if(items?.customisation_groups.length==0 && items?.customisation_items?.length == 0 && data.customizations?.length>0){
-                throw new BadRequestParameterError('No custumzation availabe for item')
+            // Check if customizations are allowed
+            if (
+                items?.customisation_groups.length === 0 &&
+                items?.customisation_items?.length === 0 &&
+                data.customizations?.length > 0
+            ) {
+                throw new BadRequestParameterError('No customization available for this item');
             }
 
-            let cartItem = await CartItem.findOne({_id:data.cartItemId});
-            if(!cartItem){
-                throw new BadRequestParameterError("Cart item not found")
+            // Find the cart item within the transaction
+            let cartItem = await CartItem.findOne({ _id: data.cartItemId }).session(session);
+            if (!cartItem) {
+                throw new BadRequestParameterError("Cart item not found");
             }
 
-            let validationResult = null;
-            let cartCustomData = cartItem.item?.customisationState.length>0 ?  cartItem.item?.customisationState.map(custom=>{
-                return {
-                    groupId: custom.groupId,
-                    choiceId: custom.choiceId
-                }
-            }): []
+            // Check if customizations have changed
+            let cartCustomData = Array.isArray(cartItem.item?.customisationState)
+                ? cartItem.item.customisationState.map(custom => ({ groupId: custom.groupId, choiceId: custom.choiceId }))
+                : [];
+            let hasCustomisations = Array.isArray(items.customisation_groups) &&
+                items.customisation_groups.length > 0 &&
+                Array.isArray(items.customisation_items) &&
+                items.customisation_items.length > 0;
 
-            let hasCustomisations = items?.customisation_groups.length!==0 && items?.customisation_items?.length !== 0
-            let customizationsChanged = true
-
-            if(cartCustomData.length!==data.customizations.length){
-                customizationsChanged = false
-            }
-            else{
-                customizationsChanged = cartCustomData.every(existing => 
-                    data.customizations.some(newCust => 
-                        existing.groupId === newCust.groupId && 
+            let customizationsChanged = true;
+            if (cartCustomData.length !== data.customizations.length) {
+                customizationsChanged = false;
+            } else {
+                customizationsChanged = cartCustomData.every(existing =>
+                    data.customizations.some(newCust =>
+                        existing.groupId === newCust.groupId &&
                         existing.choiceId === newCust.choiceId
                     )
                 );
             }
 
-            if(hasCustomisations && !customizationsChanged ){
+            // Validate customizations if they have changed
+            let validationResult = null;
+            if (hasCustomisations && !customizationsChanged) {
                 const validator = new CartValidator(items.customisation_groups, items.customisation_items);
-                validationResult = validator.validateAddToCartRequest(data , items);
+                validationResult = validator.validateAddToCartRequest(data, items);
+            }
+            if (validationResult !== null && !validationResult.isValid) {
+                throw new BadRequestParameterError(validationResult.errors?.[0]);
             }
 
-            if (validationResult!==null && !validationResult.isValid) {
-                throw BadRequestParameterError(validationResult.errors?.[0])
-            }
-
-             // 7. Prepare update data
-            let updatedItemData = {
-                ...cartItem.item,
-            };
-
-            // Only update customizations if they were changed and validated
+            // Prepare updated item data
+            let updatedItemData = { ...cartItem.item };
             if (validationResult?.processedData) {
                 updatedItemData.customisationState = validationResult.processedData.customisationState;
                 updatedItemData.customizations = validationResult.processedData?.customizations;
-                updatedItemData.basePrice = validationResult.processedData?.basePrice
-                updatedItemData.totalPrice = validationResult.processedData?.totalPrice
-                updatedItemData.quantity = validationResult.processedData?.quantity
-            }
-            else{
+                updatedItemData.basePrice = validationResult.processedData?.basePrice;
+                updatedItemData.totalPrice = validationResult.processedData?.totalPrice;
+                updatedItemData.quantity = validationResult.processedData?.quantity;
+            } else {
                 const basePrice = parseFloat(items.item_details?.price?.value) || 0;
-                const customizationPrice = cartItem.item?.customisationState.length > 0 ? cartItem.item?.customisationState.reduce((sum, c) => sum + (c.price || 0), 0) : 0
-                updatedItemData = { ...updatedItemData , quantity : { count: data.quantity}}
-                updatedItemData.basePrice = basePrice * data.quantity
-                updatedItemData.totalPrice = (basePrice + customizationPrice) * data.quantity
+                const customizationPrice = Array.isArray(cartItem.item?.customisationState)
+                    ? cartItem.item.customisationState.reduce((sum, c) => sum + (parseFloat(c.price) || 0), 0)
+                    : 0;
+
+                updatedItemData = {
+                    ...updatedItemData,
+                    quantity: { count: data.quantity },
+                    basePrice: basePrice * data.quantity,
+                    totalPrice: (basePrice + customizationPrice) * data.quantity,
+                };
             }
-            
-            cartItem.item =updatedItemData;
-            return  await cartItem.save();
-        }
-        catch (err) {
-            if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
-                throw err
+
+            // Update the cart item within the transaction
+            cartItem.item = updatedItemData;
+            await cartItem.save({ session });
+
+            await session.commitTransaction(); // Commit the transaction
+            session.endSession(); // End the session
+            return { success: true, message: 'Cart item updated successfully' };
+        } catch (err) {
+            await session.abortTransaction(); // Abort the transaction on error
+            session.endSession(); // End the session
+
+            if (err instanceof NoRecordFoundError || err instanceof BadRequestParameterError) {
+                throw err;
             }
             throw err;
         }
@@ -209,20 +237,30 @@ class CartService {
     }
 
     async clearCart(data) {
+        const session = await mongoose.startSession(); // Start a new session
         try {
-            const cart = await Cart.findOne({userId:data.userId,_id:data.id})
-
+            session.startTransaction(); // Begin the transaction
+    
+            // Find the cart within the transaction
+            const cart = await Cart.findOne({ userId: data.userId, _id: data.id }).session(session);
             if (!cart) {
-                throw new BadRequestParameterError("Cart not found")
+                throw new BadRequestParameterError("Cart not found");
             }
-
-            await Cart.deleteMany({userId:data.userId,_id:data.id})
-            await CartItem.deleteMany({cart:cart._id});
-
+    
+            // Delete the cart and its associated cart items within the transaction
+            await Cart.deleteMany({ userId: data.userId, _id: data.id }).session(session);
+            await CartItem.deleteMany({ cart: cart._id }).session(session);
+    
+            await session.commitTransaction(); // Commit the transaction
+            session.endSession(); // End the session
             return { success: true, message: 'Cart cleared successfully' };
-        }
-        catch (err) {
-            if(err instanceof BadRequestParameterError) throw err
+        } catch (err) {
+            await session.abortTransaction(); // Abort the transaction on error
+            session.endSession(); // End the session
+    
+            if (err instanceof BadRequestParameterError) {
+                throw err;
+            }
             throw err;
         }
     }
@@ -256,40 +294,47 @@ class CartService {
             }else{
                 query.location_id = { $exists: false };
             }
+            // Find the cart
             const cart = await Cart.findOne(query);
-
-            console.log("cartData", cart)
-            if (cart) {
-                const cartItems = await CartItem.find({ cart: cart._id });
-
-                console.log("CartsItems" , cartItems)
-
-                
-                if (cartItems.length === 0) {
-                    return { cartExists: true, items: new Map() }; // Return an empty map for consistency
-                }
-
-                console.log("CartsItems" , cartItems)
-    
-                let map = new Map();
-    
-                for (let cartData of cartItems) {
-                    console.log("CartData" , cartData)
-                    console.log("map" ,map)
-                    if (map.has(cartData?.item?.provider?.id)) {
-                        map.set(cartData?.item?.provider?.id, [...map.get(cartData?.item?.provider?.id), cartData]); // Append to existing array
-                    } else {
-                        map.set(cartData?.item?.provider?.id, [cartData]); // Initialize with an array
-                    }
-                }
-
-                console.log("after map" , map)
-    
-                return { cartExists: true, items: Object.fromEntries(map) };
-                
-            } else {
-                return { cartExists: false, items: new Map() }; // Return an empty map for consistency
+            if (!cart) {
+                return { cartExists: false, items: {} }; // Return an empty object for consistency
             }
+
+            // Find cart items
+            const cartItems = await CartItem.find({ cart: cart._id });
+            if (cartItems.length === 0) {
+                return { cartExists: true, items: {} }; // Return an empty object for consistency
+            }
+
+            // Group cart items by provider ID and local ID
+            const map = new Map();
+
+            for (const cartData of cartItems) {
+                const providerId = cartData?.item?.provider?.id;
+                const localId = cartData?.item?.local_id;
+    
+                // Skip invalid cart items
+                if (!providerId || !localId) {
+                    console.warn("Invalid cart item found:", cartData);
+                    continue;
+                }
+    
+                // Initialize or update the map
+                if (map.has(providerId)) {
+                    const providerData = map.get(providerId);
+                    if (providerData[localId]) {
+                        providerData[localId].push(cartData);
+                    } else {
+                        providerData[localId] = [cartData];
+                    }
+                    map.set(providerId, providerData);
+                } else {
+                    map.set(providerId, { [localId]: [cartData] });
+                }
+            }
+    
+            // Convert the Map to an object for consistent return format
+            return { cartExists: true, items: Object.fromEntries(map) };
         }
         catch (err) {
             throw err;
