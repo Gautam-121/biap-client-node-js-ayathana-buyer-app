@@ -156,7 +156,6 @@ class AdminService {
     
     async sendInvite(request, user, params) {
         let session = null;
-    
         try {
 
             // Start transaction

@@ -51,7 +51,7 @@ class SseEvent extends EventEmitter {
             res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({messageId: "", count: 0})}\n\n`);
         }, this.options.keepaliveInterval);
 
-         // Add error handling
+        // Add error handling
         res.on('error', (error) => {
             clearInterval(keepaliveTimer);
             this.emit('error', error);

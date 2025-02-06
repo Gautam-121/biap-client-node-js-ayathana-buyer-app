@@ -82,9 +82,9 @@ class RazorPayService
             let orderDetail = await instance.orders.create(options);
 
             const transaction = {
-                amount: data.amount,
-                status: RAZORPAY_STATUS.IN_PROGRESS,
-                type: 'ON-ORDER',
+                amount: data.amount, //
+                status: RAZORPAY_STATUS.IN_PROGRESS, //
+                type: 'ON-ORDER', 
                 transactionId: transactionId,
                 orderId:orderDetail.id,
                 humanReadableID:humanReadableID,

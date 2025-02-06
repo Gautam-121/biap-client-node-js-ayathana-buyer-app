@@ -106,7 +106,7 @@ class DeliveryAddressService {
     async onDeliveryAddressDetails(user = {}) {
         try {
             // Fetch addresses with lean() for better performance
-            const deliveryAddressDetails = await DeliveryAddressMongooseModel.find({ userId: user?.decodedToken?.uid}).lean().exec()
+            const deliveryAddressDetails = await DeliveryAddressMongooseModel.find({ userId: user?.decodedToken?.uid }).lean().exec()
 
             // Handle case when no addresses found
             if (!deliveryAddressDetails || deliveryAddressDetails.length === 0) {

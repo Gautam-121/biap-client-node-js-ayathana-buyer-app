@@ -152,8 +152,9 @@ class ConfirmOrderService {
 
             console.log("bppConfirmResponse-------------------->",bppConfirmResponse);
 
-            if (bppConfirmResponse?.message?.ack)
+            if (bppConfirmResponse?.message?.ack?.status === "ACK")
                 await this.updateOrder(dbResponse, bppConfirmResponse, dbResponse.paymentType || order?.payment?.type);
+         
 
             return bppConfirmResponse;
 

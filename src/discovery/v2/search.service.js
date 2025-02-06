@@ -398,10 +398,7 @@ class SearchService {
 
   async search(searchRequest = {}, targetLanguage = "en") {
     try {
-      // Validate inputs
-      if (!searchRequest || typeof searchRequest !== 'object') {
-        throw new BadRequestParameterError('Invalid search request');
-      }
+      
       if (!targetLanguage || typeof targetLanguage !== 'string') {
         throw new BadRequestParameterError('Invalid target language');
       }
@@ -1032,11 +1029,7 @@ class SearchService {
   
   async getProviderDetails(searchRequest = {}, targetLanguage = "en") {
     try {
-      // Validate input
-      if (!searchRequest.providerId || !searchRequest.locationId) {
-        throw new Error('Provider ID and Location ID are required');
-      }
-  
+      
       // Use filter for exact matches (better performance)
       const query_obj = {
         bool: {
@@ -1068,7 +1061,7 @@ class SearchService {
   
       // Check if provider and location exist
       if (!queryResults.hits?.hits?.length) {
-        throw new Error('Provider or location not found');
+        return null
       }
   
       // Extract provider details from the first hit
@@ -1407,7 +1400,7 @@ class SearchService {
   
       // Validate queryResults and hits
       if (!queryResults?.hits?.hits?.length) {
-        throw new Error('Item not found');
+        return null
       }
   
       let item_details = queryResults.hits.hits[0]?._source || {};
@@ -1561,7 +1554,7 @@ async getAttributes(searchRequest) {
     if (searchRequest.category) {
       filterQuery.push({ term: { "item_details.category_id": searchRequest.category } });
     }
-    if (searchRequest.provider) {
+    if (searchRequest.providerId) {
       filterQuery.push({ term: { "provider_details.id": searchRequest.providerId } });
     }
     // Handle pagination
@@ -1938,7 +1931,7 @@ async getAttributes(searchRequest) {
       if (searchRequest.category) {
         filterQuery.push({ term: { "item_details.category_id": searchRequest.category } });
       }
-      if (searchRequest.provider) {
+      if (searchRequest.providerId) {
         filterQuery.push({ term: { "provider_details.id": searchRequest.providerId } });
       }
   
@@ -2787,11 +2780,7 @@ async getGlobalProviders(searchRequest, targetLanguage = "en") {
 
 async getProviders(searchRequest, targetLanguage = "en") {
   try {
-    // Validate inputs
-    if (!searchRequest.latitude || !searchRequest.longitude) {
-      throw new Error('Latitude and Longitude are required');
-    }
-
+  
     let filterArray = [];
     let limit = parseInt(searchRequest.limit) || 10;
 
@@ -2876,8 +2865,8 @@ async getProviders(searchRequest, targetLanguage = "en") {
         query: query_obj,
         aggs: aggr_query,
         size: 0,
-        // track_total_hits: true,
-        // timeout: '30s'
+        track_total_hits: true,
+        timeout: '30s'
       },
     });
 
