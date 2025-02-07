@@ -25,7 +25,7 @@ const addOrUpdateOrderWithTransactionId = async (transactionId, orderSchema = {}
 
 };
 
-const addOrUpdateOrderWithTransactionIdAndProvider = async (transactionId, providerId, orderSchema = {}) => {
+const addOrUpdateOrderWithTransactionIdAndProvider = async (transactionId, providerId, orderSchema = {} , session) => {
 
 
     console.log("items orderSchema------------------->",orderSchema.paymentType)
@@ -37,7 +37,7 @@ const addOrUpdateOrderWithTransactionIdAndProvider = async (transactionId, provi
         {
             ...orderSchema
         },
-        { upsert: true }
+        session ? { upsert: true , session : session } : { upsert : true}
     );
 
 };

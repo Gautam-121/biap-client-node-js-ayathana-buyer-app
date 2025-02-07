@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { resetPasswordTemplate , inviteCodeTemplate} from './email.template.js';
+import { resetPasswordTemplate , inviteCodeTemplate, orderStatusTemplate} from './email.template.js';
 
 class EmailService {
     constructor() {
@@ -37,6 +37,19 @@ class EmailService {
             to: email,
             subject: 'Welcome to Our Platform - Your Exclusive Invite ',
             html: inviteCodeTemplate(name, inviteCode, tokenExpiry)
+        };
+
+        const info = await this.transporter.sendMail(mailOptions);
+        return info;
+    }
+
+    // Send Order status mail
+    async sendOrderStatus(email, subject, message) {
+        const mailOptions = {
+            from: process.env.SMTP_USER || "developer.xircular@gmail.com",
+            to: email,
+            subject: subject,
+            html: orderStatusTemplate(message)
         };
 
         const info = await this.transporter.sendMail(mailOptions);

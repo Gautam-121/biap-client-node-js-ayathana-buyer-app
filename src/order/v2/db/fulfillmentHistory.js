@@ -11,7 +11,7 @@ const  FulfillmentsHistory = new mongoose.Schema(
     { _id: true, timestamps: true }
 );
 
-//OrderSchema.index({userId: 1, createdAt: -1});
+FulfillmentsHistory.index({ orderId: 1, id: 1, state: 1 }, { unique: true });
 
 const FulfillmentHistory  = mongoose.model('fulfillmentHistory', FulfillmentsHistory, "fulfillmentHistory");
 

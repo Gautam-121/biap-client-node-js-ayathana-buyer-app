@@ -16,7 +16,6 @@ class SseController {
     * @return {callback}
     */
     async onEvent(req, res, next) {
-
         try {
             const { query = {} } = req;
             const { messageId } = query;
@@ -24,18 +23,11 @@ class SseController {
             console.log("[Headers] in event call" , req.headers)
 
             if (messageId && messageId.length) {
-
                 const configureSse = new ConfigureSse(req, res, messageId);
                 const initSSE = configureSse.initialize();
-
                 console.log("Enter inside event trigger")
-
-                // console.log("initSSE-----------x-->",initSSE)
-
                 addSSEConnection(messageId, initSSE);
-
             }
-
             // res.json({});
         }
         catch (err) {
@@ -181,7 +173,6 @@ class SseController {
     */
     onStatus(req, res, next) {
         const { body: response } = req;
-
         sseProtocolService.onStatus(response).then(result => {
             console.log("Enter onStatus" , result)
             res.json(result);

@@ -13,11 +13,8 @@ class ConfigureSSE {
 
     initialize() {
         try {
-            let message = [];
 
-            if (this.message && !_.isEmpty(message))
-                message = this.message;
-
+            let message = this.message && !_.isEmpty(this.message) ? this.message : [];
             const sse = new SseEvent(
                 message,
                 {

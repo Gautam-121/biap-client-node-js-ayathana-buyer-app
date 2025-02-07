@@ -5,12 +5,7 @@ class SseEvent extends EventEmitter {
 
     constructor(initial, options = {}) {
         super();
-
-        if (initial)
-            this.initial = initial;
-        else
-            this.initial = [];
-
+        this.initial = initial || [];
         if (!_.isEmpty(options))
             this.options = {  ...options ,  keepaliveInterval: 15000, keepaliveMessage: 'ping' }; // added keepaliveInterval , keepAliveMessage
         else
@@ -24,6 +19,7 @@ class SseEvent extends EventEmitter {
      */
     init(req, res) {
         let id = 0;
+        let listenerAttached = false; // Track if any listener is attached
 
         req.socket.setTimeout(0);
         req.socket.setNoDelay(true);
@@ -46,27 +42,40 @@ class SseEvent extends EventEmitter {
         // Increase number of event listeners on init
         this.setMaxListeners(this.getMaxListeners() + 2);
 
+        // ✅ Timeout to close the connection if no listener is attached within 60 seconds
+        const closeTimeout = setTimeout(() => {
+            if (!listenerAttached) {
+                console.log("Closing SSE connection due to no listener within 60 seconds");
+                res.end();
+            }
+        }, 60000); // 60 seconds
+
         // Add keepalive interval - Added this one
         const keepaliveTimer = setInterval(() => {
             res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({messageId: "", count: 0})}\n\n`);
         }, this.options.keepaliveInterval);
-
-        // Add error handling
-        res.on('error', (error) => {
-            clearInterval(keepaliveTimer);
-            this.emit('error', error);
-        });
 
         // Add connection detection
         const detectDisconnection = setInterval(() => {
             if (res.writableEnded || !res.writableFinished) {
                 clearInterval(keepaliveTimer);
                 clearInterval(detectDisconnection);
+                clearTimeout(closeTimeout); // ✅ Clear timeout if connection is closed
                 req.emit('close');
             }
         }, 30000);
 
+        // Add error handling
+        res.on('error', (error) => {
+            clearInterval(keepaliveTimer);
+            clearInterval(detectDisconnection);
+            clearTimeout(closeTimeout);
+            this.emit('error', error);
+        });
+
         const dataListener = data => {
+            listenerAttached = true; // ✅ Mark that a listener is attached
+            clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
 
             if (data.id)
                 res.write(`id: ${data.id}\n`);
@@ -82,6 +91,9 @@ class SseEvent extends EventEmitter {
         };
 
         const serializeListener = data => {
+            listenerAttached = true; // ✅ Mark that a listener is attached
+            clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
+
             const serializeSend = data.reduce((all, msg) => {
                 all += `id: ${id}\ndata: ${JSON.stringify(msg)}\n\n`;
                 id += 1;
@@ -108,6 +120,7 @@ class SseEvent extends EventEmitter {
         req.on('close', () => {
             clearInterval(keepaliveTimer); // added this line
             clearInterval(detectDisconnection); // Add this line
+            clearTimeout(closeTimeout); // ✅ Ensure timeout is cleared on disconnect
             this.removeListener('data', dataListener);
             this.removeListener('serialize', serializeListener);
             this.setMaxListeners(this.getMaxListeners() - 2);

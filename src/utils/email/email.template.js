@@ -183,3 +183,8 @@ export const inviteCodeTemplate = (name, inviteCode, tokenExpiry) => {
     `;
 };
 
+export const orderStatusTemplate = (message) => `
+                    <p>Dear Customer,</p>
+                    <p>${message}</p>
+                    <p>Thank you for shopping with us!</p>`;
+

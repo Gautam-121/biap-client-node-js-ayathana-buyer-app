@@ -404,7 +404,6 @@ class ConfirmOrderService {
     }
 
     async getOrderDetails(orderId,user){
-
         const dbResponse = await getOrderById(orderId);
         // if(dbResponse[0].userId !==user.decodedToken.uid){
         //     return []

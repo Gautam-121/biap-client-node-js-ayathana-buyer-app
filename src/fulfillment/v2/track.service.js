@@ -18,8 +18,7 @@ class TrackService {
         try {
             const { context: requestContext } = trackRequest || {};
 
-
-            const orderDetails = await getOrderById(trackRequest.message.order_id);
+            const orderDetails = await getOrderById(trackRequest?.message?.order_id);
 
             // Check order state and throw appropriate errors
             switch (orderDetails[0]?.state) {
@@ -38,10 +37,12 @@ class TrackService {
 
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
+                domain: orderDetails[0]?.domain,
                 action: PROTOCOL_CONTEXT.TRACK,
-                transactionId: orderDetails?.transactionId,
-                bppId: requestContext?.bppId,
-                cityCode:orderDetails.city
+                transactionId: orderDetails[0]?.transactionId,
+                bppId: orderDetails[0]?.bppId,
+                bpp_uri: orderDetails[0]?.bpp_uri,
+                cityCode:orderDetails[0]?.city
             });
 
             return await bppTrackService.track(

@@ -10,7 +10,8 @@ const  OrdersHistory = new mongoose.Schema(
     { _id: true, timestamps: true }
 );
 
-//OrderSchema.index({userId: 1, createdAt: -1});
+
+OrdersHistory.index({ orderId: 1, state: 1 }, { unique: true });
 
 const OrderHistory  = mongoose.model('ordersHistory', OrdersHistory, "ordersHistory");
 
