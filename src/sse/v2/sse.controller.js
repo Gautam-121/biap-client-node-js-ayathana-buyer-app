@@ -79,7 +79,6 @@ class SseController {
     */
     onInit(req, res, next) {
         const { body: response } = req;
-
         sseProtocolService.onInit(response).then(result => {
             res.json(result);
         }).catch((err) => {

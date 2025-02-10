@@ -289,40 +289,12 @@ const initValidator = {
         body('*.message.fulfillments').isArray({ min: 1 }).withMessage("Fulfillments must be an array with at least one fulfillment"),
         body('*.message.fulfillments.*.id')
             .exists().withMessage("Fulfillment ID is required"),
-    
         body('*.message.fulfillments.*.type')
             .exists().withMessage("Fulfillment type is required")
             .isIn(['Delivery', 'Self-Pickup']).withMessage("Fulfillment type must be one of 'Delivery' or 'Self-Pickup'"),
-
-        body('*.message.fulfillments.*["@ondc/org/provider_name"]')
-            .exists().withMessage("@ondc/org/provider_name is required")
-            .isString()
-            .withMessage("@ondc/org/provider_name must be a string"),
-        
-        body('*.message.fulfillments.*.tracking')
-            .exists().withMessage("tracking is required")
-            .isBoolean()
-            .withMessage("tracking must be a boolean"),
-        
-        body('*.message.fulfillments.*["@ondc/org/category"]')
-            .exists().withMessage("@ondc/org/category is required")
-            .isString()
-            .withMessage("@ondc/org/category must be a string"),
-
-        body('.message.fulfillments.*["@ondc/org/TAT"]')
-            .exists().withMessage("@ondc/org/TAT is required")
-            .isString()
-            .withMessage("@ondc/org/TAT must be a string"),
-
-        body('*.message.fulfillments.*.state.descriptor.code')
-            .optional()
-            .isString()
-            .withMessage("state.descriptor.code must be a string"),
-
         body('*.message.delivery_info.*.id')
             .exists().withMessage("Delivery ID is required")
             .isUUID().withMessage("Delivery ID must be a valid UUID"),
-
         // Message -> Payment Validations
         body('*.message.payment.type')
             .exists().withMessage("Payment type is required")

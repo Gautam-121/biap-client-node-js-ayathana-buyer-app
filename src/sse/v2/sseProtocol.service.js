@@ -73,8 +73,6 @@ class SseProtocol {
     async onInit(response) {
         try {
             const { messageId } = response;
-
-
             console.log(`[DEBUG] onInit---${messageId}--${response}`)
             sendSSEResponse(
                 messageId,

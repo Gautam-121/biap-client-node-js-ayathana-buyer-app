@@ -20,6 +20,7 @@ class SseEvent extends EventEmitter {
     init(req, res) {
         let id = 0;
         let listenerAttached = false; // Track if any listener is attached
+        let inactivityTimeout; // Timeout for inactivity
 
         req.socket.setTimeout(0);
         req.socket.setNoDelay(true);
@@ -50,6 +51,15 @@ class SseEvent extends EventEmitter {
             }
         }, 60000); // 60 seconds
 
+        // ✅ Function to reset inactivity timeout when data is emitted
+        const resetInactivityTimeout = () => {
+            if (inactivityTimeout) clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(() => {
+                console.log("Closing SSE connection due to inactivity for 60 seconds");
+                res.end();
+            }, 60000);
+        };
+
         // Add keepalive interval - Added this one
         const keepaliveTimer = setInterval(() => {
             res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({messageId: "", count: 0})}\n\n`);
@@ -61,21 +71,25 @@ class SseEvent extends EventEmitter {
                 clearInterval(keepaliveTimer);
                 clearInterval(detectDisconnection);
                 clearTimeout(closeTimeout); // ✅ Clear timeout if connection is closed
+                clearTimeout(inactivityTimeout);
                 req.emit('close');
             }
         }, 30000);
 
-        // Add error handling
+        // ✅ Handle error
         res.on('error', (error) => {
             clearInterval(keepaliveTimer);
             clearInterval(detectDisconnection);
             clearTimeout(closeTimeout);
+            clearTimeout(inactivityTimeout);
             this.emit('error', error);
         });
 
+        // ✅ Listener for sending data
         const dataListener = data => {
             listenerAttached = true; // ✅ Mark that a listener is attached
             clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
+            resetInactivityTimeout(); // Reset inactivity timer on new data
 
             if (data.id)
                 res.write(`id: ${data.id}\n`);
@@ -90,9 +104,11 @@ class SseEvent extends EventEmitter {
             res.write(`data: ${JSON.stringify(data.data)}\n\n`);
         };
 
+        // ✅ Listener for serialized data
         const serializeListener = data => {
             listenerAttached = true; // ✅ Mark that a listener is attached
             clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
+            resetInactivityTimeout(); // Reset inactivity timer on new data
 
             const serializeSend = data.reduce((all, msg) => {
                 all += `id: ${id}\ndata: ${JSON.stringify(msg)}\n\n`;
@@ -103,9 +119,9 @@ class SseEvent extends EventEmitter {
         };
 
         this.on('data', dataListener);
-
         this.on('serialize', serializeListener);
 
+        // ✅ If initial data exists, send it
         if (this.initial) {
             if (this.options?.isSerialized)
                 this.serialize(this.initial);
@@ -116,7 +132,7 @@ class SseEvent extends EventEmitter {
                 );
         }
 
-        // Remove listeners and reduce the number of max listeners on client disconnect
+         // ✅ Handle client disconnect
         req.on('close', () => {
             clearInterval(keepaliveTimer); // added this line
             clearInterval(detectDisconnection); // Add this line

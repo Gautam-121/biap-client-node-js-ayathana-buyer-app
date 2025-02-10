@@ -449,16 +449,7 @@ class InitOrderService {
                             })),
                             fulfillments: order?.fulfillments.map(fulfillment => ({ 
                                 id: fulfillment?.id,
-                                type: fulfillment?.type,
-                                "@ondc/org/provider_name": fulfillment?.["@ondc/org/provider_name"],
-                                tracking: fulfillment?.tracking,
-                                "@ondc/org/category": fulfillment?.["@ondc/org/category"],
-                                "@ondc/org/TAT": fulfillment?.["@ondc/org/TAT"],
-                                state: {
-                                    descriptor: {
-                                        code: fulfillment?.start?.descriptor?.code,
-                                    }
-                                }
+                                type: fulfillment.type
                             })),
                             offers: order?.offers,
                             billing_info: {
@@ -479,7 +470,7 @@ class InitOrderService {
                                 email: storedDeliveryAddress?.descriptor?.email
                             },
                             delivery_info: {
-                                type: "Delivery",
+                                type: order?.fulfillments[0].type || "Delivery",
                                 name: storedDeliveryAddress?.descriptor?.name,
                                 phone: storedDeliveryAddress?.descriptor?.phone,
                                 email: storedDeliveryAddress?.descriptor?.email,
