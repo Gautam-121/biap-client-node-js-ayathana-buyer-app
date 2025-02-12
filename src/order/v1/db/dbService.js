@@ -89,16 +89,23 @@ const getOrderByTransactionId = async (transactionId) => {
     else
         return order?.[0];
 };
-const getOrderByTransactionIdAndProvider = async (transactionId, providerId) => {
-    const order = await OrderMongooseModel.find({
+const getOrderByTransactionIdAndProvider = async (transactionId, providerId, session) => {
+    let query = OrderMongooseModel.find({
         transactionId: transactionId,
-        "provider.id":providerId
+        "provider.id": providerId
     });
 
-    if (!(order || order.length))
+    if (session) {
+        query = query.session(session);
+    }
+
+    const order = await query;
+
+    if (!order || order.length === 0) {
         throw new NoRecordFoundError();
-    else
-        return order?.[0];
+    }
+
+    return order[0];
 };
 
 const getOrderById = async (orderId) => {

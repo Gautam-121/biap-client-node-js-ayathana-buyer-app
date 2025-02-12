@@ -17,12 +17,38 @@ class PaymentController {
         const data = req.body;
 
         phonePeService
-            .createPayments(orderTransactionId, data, currentUser)
+            .createSinglePaymentForMultiSellers(orderTransactionId, data, currentUser)
             .then(response => {
                 res.status(200).json(response);
             })
             .catch(err => next(err));
-    } 
+    }
+
+    initializePaymentsForMultiSeller(req, res, next) {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new BadRequestParameterError(errors.array()[0].msg);
+        }
+    
+        const { orderTransactionIds, amount } = req.body; // Array of transaction IDs and total amount
+        const currentUser = req.user;
+    
+        // Validate input
+        if (!Array.isArray(orderTransactionIds) || orderTransactionIds.length === 0) {
+            throw new BadRequestParameterError("Invalid or missing orderTransactionIds");
+        }
+        if (!amount || isNaN(amount)) {
+            throw new BadRequestParameterError("Invalid or missing totalAmount");
+        }
+    
+        // Process payments for all sellers' orders
+        phonePeService
+            .createSinglePaymentForMultiSellers(orderTransactionIds, amount, currentUser)
+            .then(response => {
+                res.status(200).json(response);
+            })
+            .catch(err => next(err));
+    }
         
 
     phonePeInitiatePaymentWebhook(req,res,next) {
@@ -38,7 +64,7 @@ class PaymentController {
             throw new BadRequestParameterError('Missing xVerify signature');
         }
 
-        phonePeService.handleInitializePaymentWebhook(signature,response).then(user => {
+        phonePeService.processPaymentWebhook(signature,response).then(user => {
             res.status(200).json(user);
         })
         .catch(err => next(err));
@@ -51,11 +77,9 @@ class PaymentController {
         }
 
         const { merchantTransactionId } = req.params;
-        const currentUser = req.user;
-        const confirmdata = req.body.confirmRequest;
 
         phonePeService
-            .paymentStatus(merchantTransactionId , confirmdata, currentUser)
+            .paymentStatusForMultiSeller(merchantTransactionId)
             .then(response => {
                 res.json(response);
             })

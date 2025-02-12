@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-
+import {PAYMENT_URL} from "../../../utils/constants.js"
 import { PAYMENT_COLLECTED_BY, PAYMENT_TYPES, PROTOCOL_PAYMENT } from "../../../utils/constants.js";
 import {protocolConfirm, protocolGetDumps} from '../../../utils/protocolApis/index.js';
 import OrderMongooseModel from "../../v1/db/order.js";
@@ -17,7 +17,7 @@ class BppConfirmService {
             const response = await protocolConfirm(confirmRequest);
 
             if(response.error){
-                return { message: response.data ,error:response.error};
+                return { message: response.message ,error:response.error};
             }else{
                 return { context: confirmRequest.context, message: response.message };
             }
@@ -241,28 +241,28 @@ class BppConfirmService {
                                         }
                                     }
                                 },
-                                type: "Delivery"
+                                type: fulfillment?.type || "Delivery"
                             }
                         }),
                         payment: {
-                            uri: (storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
-                                "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay":
+                            uri: (storedOrder?.payment?.type ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
+                                PAYMENT_URL:
                                 undefined, //In case of pre-paid collection by the buyer app, the payment link is rendered after the buyer app sends ACK for /on_init but before calling /confirm;
-                            tl_method:(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
+                            tl_method:(storedOrder?.payment?.type ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                 "http/post":
                                 undefined,
                             params: {
                                 amount: Number(value)?.toFixed(2)?.toString() || order?.payment?.paid_amount?.toFixed(2)?.toString(),
                                 currency: "INR",
-                                transaction_id:(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
+                                transaction_id:(storedOrder?.payment?.type ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                     order.jusPayTransactionId??uuidv4():
                                     undefined//payment transaction id
                             },
-                            status:(storedOrder?.paymentType ||  order?.payment?.type)=== PAYMENT_TYPES["ON-ORDER"] ?
+                            status:(storedOrder?.payment?.type ||  order?.payment?.type)=== PAYMENT_TYPES["ON-ORDER"] ?
                                 PROTOCOL_PAYMENT.PAID :
                                 PROTOCOL_PAYMENT["NOT-PAID"],
-                            type: (storedOrder?.paymentType ||  order?.payment?.type),
-                            collected_by: (storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ? 
+                            type: (storedOrder.payment?.type ||  order?.payment?.type),
+                            collected_by: (storedOrder.payment?.type ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ? 
                                 PAYMENT_COLLECTED_BY.BAP : 
                                 PAYMENT_COLLECTED_BY.BPP,
                             '@ondc/org/buyer_app_finder_fee_type': process.env.BAP_FINDER_FEE_TYPE,
@@ -270,7 +270,7 @@ class BppConfirmService {
                             '@ondc/org/settlement_basis': order.payment['@ondc/org/settlement_basis']??storedOrder?.settlementDetails?.["@ondc/org/settlement_basis"],
                             '@ondc/org/settlement_window': order.payment['@ondc/org/settlement_window']??storedOrder?.settlementDetails?.["@ondc/org/settlement_window"],
                             '@ondc/org/withholding_amount': order.payment['@ondc/org/withholding_amount']??storedOrder?.settlementDetails?.["@ondc/org/withholding_amount"],
-                            "@ondc/org/settlement_details":(storedOrder?.paymentType ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
+                            "@ondc/org/settlement_details":(storedOrder.payment?.type ||  order?.payment?.type) === PAYMENT_TYPES["ON-ORDER"] ?
                                 storedOrder?.settlementDetails?.["@ondc/org/settlement_details"]:
                                 order.payment['@ondc/org/settlement_details'],
 

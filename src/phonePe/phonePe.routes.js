@@ -12,7 +12,7 @@ router.post('/v2/phonepe/webhook', phonePeController.phonePeInitiatePaymentWebho
 router.post('/v2/phonepe/:orderTransactionId',
     authentication(),
     paymentConfirmValidator.initializePayment,
-    phonePeController.initializePayments
+    phonePeController.initializePaymentsForMultiSeller
 );
 
 router.post('/v2/phonepe/paymenStatus/:merchantTransactionId',

@@ -298,7 +298,7 @@ const initValidator = {
         // Message -> Payment Validations
         body('*.message.payment.type')
             .exists().withMessage("Payment type is required")
-            .isIn(['ON-ORDER', 'FULFILLMENT']).withMessage("Payment type must be one of 'ON-ORDER' or 'FULFILLMENT'"),
+            .isIn(['ON-ORDER']).withMessage("Payment type must be one of 'ON-ORDER' or 'FULFILLMENT'"),
 
     ],
 };

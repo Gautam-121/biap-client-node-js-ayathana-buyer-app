@@ -156,4 +156,6 @@ export const NOTIFICATION_CHANNELS = {
     CHAT: 'chat-channel',
     PROMOTIONAL: 'promotional-channel',
     DEFAULT: 'default-channel'
-  };
+};
+
+export const PAYMENT_URL =  "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay"

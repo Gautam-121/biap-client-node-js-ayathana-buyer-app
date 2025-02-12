@@ -10,6 +10,7 @@ import {
 import ContextFactory from "../../../factories/ContextFactory.js";
 import BppConfirmService from "./bppConfirm.service.js";
 import JuspayService from "../../../payment/juspay.service.js";
+import PhonePeService from "../../../phonePe/phonePe.service.js";
 import CartService from "../cart/v2/cart.service.js";
 import FulfillmentHistory from "../db/fulfillmentHistory.js";
 import sendAirtelSingleSms from "../../../utils/sms/smsUtils.js";
@@ -20,7 +21,9 @@ import dbConnect from "../../../database/mongooseConnector.js";
 const bppConfirmService = new BppConfirmService();
 const cartService = new CartService();
 const juspayService = new JuspayService();
+const phonePeService = new PhonePeService()
 import mongoose from 'mongoose';
+import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 class ConfirmOrderService {
 
     /**
@@ -70,7 +73,7 @@ class ConfirmOrderService {
      * @param {Object} dbResponse
      * @param {Object} confirmResponse
      */
-    async updateOrder(dbResponse, confirmResponse, paymentType) {
+    async updateOrder(dbResponse, confirmResponse, paymentType, session) {
         let orderSchema = dbResponse?.toJSON() || {};
 
         orderSchema.messageId = confirmResponse?.context?.message_id;
@@ -79,7 +82,8 @@ class ConfirmOrderService {
 
         await addOrUpdateOrderWithTransactionIdAndProvider(
             confirmResponse?.context?.transaction_id,dbResponse.provider.id,
-            { ...orderSchema }
+            { ...orderSchema },
+            session
         );
     }
 
@@ -89,7 +93,7 @@ class ConfirmOrderService {
      * @param {Number} total
      * @param {Boolean} confirmPayment
      */
-    async confirmAndUpdateOrder(orderRequest = {}, total, confirmPayment = true,paymentData) {
+    async confirmAndUpdateOrder(orderRequest = {}, total, confirmPayment = true,paymentData,session) {
         const {
             context: requestContext,
             message: order = {}
@@ -97,9 +101,14 @@ class ConfirmOrderService {
         let paymentStatus = {}
         // console.log("message---------------->",orderRequest.message)
 
-        const dbResponse = await getOrderByTransactionIdAndProvider(orderRequest?.context?.transaction_id,orderRequest.message.providers.id);
+        const dbResponse = await getOrderByTransactionIdAndProvider(orderRequest?.context?.transaction_id,orderRequest.message.providers.id,session);
 
         console.log("dbResponse---------------->",dbResponse)
+
+        // Check if a refund is already in progress or completed
+        if (dbResponse.refund?.status === "PROCESSING" || dbResponse.refund?.status === "COMPLETED") {
+            throw new BadRequestParameterError("Refund already initiated or completed for this order.")
+        }
 
         if (dbResponse && dbResponse?.paymentStatus === null) {
 
@@ -153,8 +162,13 @@ class ConfirmOrderService {
             console.log("bppConfirmResponse-------------------->",bppConfirmResponse);
 
             if (bppConfirmResponse?.message?.ack?.status === "ACK")
-                await this.updateOrder(dbResponse, bppConfirmResponse, dbResponse.paymentType || order?.payment?.type);
-         
+                await this.updateOrder(dbResponse, bppConfirmResponse, (dbResponse.paymentType || order?.payment?.type), session);
+
+            // Check if the seller confirmed the order
+            if (!bppConfirmResponse?.message?.ack || bppConfirmResponse?.message?.ack?.status === "NACK") {
+                // Seller did not confirm the order, initiate refund
+                await phonePeService.initiateRefund(dbResponse.transactionId, Number(dbResponse.quote.price.value) , session);        
+            }
 
             return bppConfirmResponse;
 
@@ -376,31 +390,55 @@ class ConfirmOrderService {
      * @param {Array} orders
      */
     async confirmMultipleOrder(orders,paymentData) {
-
-        let total = 0;
-        orders.forEach(order => {
-            total += order?.message?.payment?.paid_amount;
-        });
-
-        console.log(orders)
-        const confirmOrderResponse = await Promise.all(
-            orders.map(async orderRequest => {
-                try {
-                    if(paymentData){
-                        return await this.confirmAndUpdateOrder(orderRequest, total, true,paymentData);
-                    }else{
-                        return await this.confirmAndUpdateOrder(orderRequest, total, false,paymentData);
+        let session;
+        try {
+            session = await mongoose.startSession();
+            session.startTransaction();
+            let total = 0;
+            orders.forEach(order => {
+                total += order?.message?.payment?.paid_amount;
+            });
+    
+            console.log(orders)
+            const confirmOrderResponse = await Promise.all(
+                orders.map(async orderRequest => {
+                    try {
+                        if(paymentData){
+                            return await this.confirmAndUpdateOrder(orderRequest, total, true,paymentData,session);
+                        }else{
+                            return await this.confirmAndUpdateOrder(orderRequest, total, false,paymentData,session);
+                        }
+    
                     }
-
-                }
-                catch (err) {
-                    console.log(err)
-                    return err.response.data;
-                }
-            })
-        );
-
-        return confirmOrderResponse;
+                    catch (err) {
+                        return {
+                            error: true,
+                            context: orderRequest.context,
+                            message: err.response?.data || err.message
+                        };
+                    }
+                })
+            );
+    
+            // Check if any orders failed
+            const hasFailures = confirmOrderResponse.some(response => response.error);
+            if (hasFailures) {
+                await session.abortTransaction();
+                return confirmOrderResponse;
+            }
+    
+            await session.commitTransaction();
+            return confirmOrderResponse;
+        } catch (error) {
+            if (session) {
+                await session.abortTransaction();
+            }
+            throw error;
+        } finally {
+            if (session) {
+                session.endSession();
+            }
+        }
     }
 
     async getOrderDetails(orderId,user){

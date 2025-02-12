@@ -20,7 +20,7 @@ class ConfigureSSE {
                 {
                     initialEvent: this.action,
                     eventId: this.messageId,
-                    eventName: this.req.body.eventName // new line added
+                    eventName: this.req.query.event // new line added
                 }
             );
 

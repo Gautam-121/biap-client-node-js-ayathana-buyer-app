@@ -350,7 +350,20 @@ const OrderSchema = new mongoose.Schema(
         tags:{type:Object},
         domain:{type:String},
         documents:{type:Object},
-        offers:{type:Object}
+        offers:{type:Object},
+        refund: {
+            status: {
+                type: String,
+                enum: ["NONE", "INITIATED", "PROCESSING", "COMPLETED", "FAILED"],
+                default: "NONE",
+            },
+            refundId: { type: String },
+            amount: { type: Number },
+            initiatedAt: { type: Date },
+            processingAt: { type: Date }, // Optional: Track when processing started
+            completedAt: { type: Date },
+            failedAt: { type: Date }, // Optional: Track when refund failed
+        },
     },
     { _id: true, timestamps: true }
 );

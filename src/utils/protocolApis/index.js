@@ -20,6 +20,21 @@ const protocolConfirm = async (data) => {
     );
 
     const result = await apiCall.send();
+
+    console.log("resultData" , result)
+    console.log("resultDataGenerated" , result.data)
+    // Check if result.data exists
+    if (!result.data) {
+        return {
+          message : { ack : { status : "NACK" }},
+          error:{
+             type: "server-error",
+             code: 500,
+             message: "Internal Server Error"
+          }
+        }
+    }
+    console.log("resultData" , result.data)
     return result.data;
 }
 

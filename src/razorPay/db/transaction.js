@@ -2,40 +2,90 @@ import mongoose from'mongoose';
 import { uuid } from 'uuidv4';
 import OrderHistory from "../../order/v2/db/orderHistory.js";
 
+// const transactionSchema = new mongoose.Schema({
+//     _id:{
+//         type: String,
+//         required:true,
+//         default: () => uuid(),
+//     },
+//     amount: { 
+//         type:Number,
+//     },
+//     transactionId: { 
+//         type:String,
+//     },
+//     date: {
+//         type:Number,
+//     },
+//     status: { 
+//         type:String,
+//     },
+//     orderId: { 
+//         type:String,
+//     },
+//     humanReadableID: { 
+//         type:String,
+//     },
+//     depositDate: {
+//         type: Number,
+//     },
+//     payment: { 
+//         type: Object,
+//     }
+// },{
+//     strict: true,
+//     collation: { locale: 'en_US', strength: 1 }
+// });
+
 const transactionSchema = new mongoose.Schema({
-    _id:{
+    _id: {
         type: String,
-        required:true,
+        required: true,
         default: () => uuid(),
     },
     amount: { 
-        type:Number,
+        type: Number,
+        required: true
     },
-    transactionId: { 
-        type:String,
+    merchantTxnId: {  // merchant generated Id 
+        type: String,
+        required: true
+    },
+    parentTransactionId: { 
+        type: String, // Reference to the parent transaction
+        required: false
     },
     date: {
-        type:Number,
+        type: Number,
+        default: Date.now
     },
     status: { 
-        type:String,
+        type: String,
+        enum: ['INITIALIZE-PAYMENT', 'SUCCESS', 'FAILED', "PENDING", 'REFUNDED'],
+        default: 'INITIALIZE-PAYMENT'
     },
     orderId: { 
-        type:String,
+        type: String // For single-order transactions
     },
-    humanReadableID: { 
-        type:String,
+    paymentId:{ // phone generated id
+        type:String
     },
-    depositDate: {
-        type: Number,
+    orderTransactionIds: { 
+        type: [String], // For multi-seller transactions
+        default: []
     },
     payment: { 
-        type: Object,
+        type: Object
+    },
+    refundedAmount: { 
+        type: Number, 
+        default: 0 // Tracks the total amount refunded
     }
-},{
+}, {
     strict: true,
     collation: { locale: 'en_US', strength: 1 }
 });
+
 
 const Transaction = mongoose.model('Transaction',transactionSchema);
 export default Transaction;

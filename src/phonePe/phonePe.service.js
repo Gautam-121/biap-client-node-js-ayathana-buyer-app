@@ -6,6 +6,7 @@ import ConfirmOrderService from "../order/v2/confirm/confirmOrder.service.js";
 import axios from 'axios';
 import NoRecordFoundError from '../lib/errors/no-record-found.error.js';
 import RefundModel from '../razorPay/db/refund.js';
+import mongoose from "mongoose"
 const confirmOrderService = new ConfirmOrderService();
 
 
@@ -114,43 +115,40 @@ class PhonePeService {
   }
 
   // Helper methods for refund functionality
-  async _createRefundRecord(data) {
+  async _createRefundRecord(data , session) {
     const refund = new RefundModel({
       ...data,
       attempts: 1,
       createdAt: new Date(),
     });
-    return await refund.save();
+    return await refund.save({ session });
   }
 
-  async _updateRefundRecord(refundId, updateData) {
+  async _updateRefundRecord(refundId, updateData, session) {
     return await RefundModel.findByIdAndUpdate(
       refundId,
       { ...updateData, updatedAt: new Date() },
-      { new: true }
+      { new: true , session: session }
     );
   }
 
-  async _processRefundWithRetry(refundRecord, transactionOrder, attempt = 1) {
+  async _processRefundWithRetry(refundRecord , sellerTransaction ,  attempt = 1 , session) {
     try {
 
       // Create Refund Payload
       const payload = {
         merchantId: this.merchantId,
-        merchantUserId: transactionOrder.merchantUserId,
         merchantTransactionId: refundRecord.refundTransactionId,
-        originalTransactionId: transactionOrder.orderId,
+        originalTransactionId: refundRecord.originalTransactionId,
         amount: Math.round(refundRecord.amount * 100), // Convert to paisa
         callbackUrl: `${this.appUrl}/clientApis/v2/phonepe/refund-webhook`,
       };
 
       // Encode Payload to Base64
-      const base64Body = Buffer.from(JSON.stringify(payload)).toString("base64");
-      const refundEndPoint = "/pg/v1/refund"
-
-      // Generate checksum for refund
       const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-      const checksum = this._calculateChecksum(base64Body , refundEndPoint);
+      const refundEndPoint = "/pg/v1/refund"
+      // Generate checksum for refund
+      const checksum = this._calculateChecksum(base64Payload , refundEndPoint);
 
        // Make refund request to PhonePe
       const response = await axios.post(
@@ -164,15 +162,29 @@ class PhonePeService {
         }
       );
 
-      // Update refund record with PhonePe response
-      await this._updateRefundRecord(refundRecord._id, {
-        status: response.code === "PAYMENT_PENDING" ? "PROCESSING" : response.code === "PAYMENT_SUCCESS" ? "COMPLETED" : "FAILED",
-        response: response?.data,
-        lastAttempt: new Date(),
-        attempts: attempt,
-      });
+      // Extract PhonePe's refund transaction ID
+      const phonePeRefundId = response.data?.data?.transactionId;
 
-      return response.data;
+      // Update refund record with PhonePe response
+      await this._updateRefundRecord(
+        refundRecord._id, 
+        {
+          status: response.code === "PAYMENT_PENDING" ? "PROCESSING" : response.code === "PAYMENT_SUCCESS" ? "COMPLETED" : "FAILED",
+          refundId: phonePeRefundId, // Store PhonePe's refund transaction ID
+          response: response?.data,
+          lastAttempt: new Date(),
+          attempts: attempt,
+        },
+        session
+    );
+
+      // Update seller transaction status
+      if (response.code === "PAYMENT_SUCCESS") {
+        sellerTransaction.status = "REFUNDED";
+        await sellerTransaction.save({ session });
+      }
+
+      return response
 
     } catch (error) {
 
@@ -182,20 +194,364 @@ class PhonePeService {
         await new Promise((resolve) =>
           setTimeout(resolve, Math.pow(2, attempt) * 1000)
         );
-        return this._processRefundWithRetry(refundRecord, transactionOrder, attempt + 1);
+        return this._processRefundWithRetry(refundRecord, sellerTransaction, attempt + 1);
       }
 
       // Update refund record with failure after all retries
-      await this._updateRefundRecord(refundRecord._id, {
-        status: "FAILED",
-        errorMessage: error.message || "INTERNAL SERVER ERROR",
-        lastAttempt: new Date(),
-        attempts: attempt,
-      });
+      await this._updateRefundRecord(
+        refundRecord._id, 
+        {
+          status: "FAILED",
+          errorMessage: error.message || "INTERNAL SERVER ERROR",
+          lastAttempt: new Date(),
+          attempts: attempt,
+        },
+        session
+      );
 
       return 
     }
   }
+
+  async processSellerTransactions(parentTransaction , session) {
+    try {
+        // Fetch all orders associated with the parent transaction
+        const orders = await Order.find({ transactionId: { $in: parentTransaction.orderTransactionIds } }).session(session);;
+
+        // Create or update seller-specific transactions
+        for (const order of orders) {
+            // Check if the seller-specific transaction already exists
+            const existingTransaction = await Transaction.findOne({ orderId: order.transactionId }).session(session);;
+
+            // Prepare the update object
+            const updateObject = {
+                amount: Number(order.quote.price.value),
+                status: "SUCCESS",
+                payment: parentTransaction.payment, // Inherit payment details from parent
+                paymentId: parentTransaction.paymentId || null, // Store seller-specific paymentId here
+                parentTransactionId: parentTransaction.merchnatTxnId, // Link to parent transaction
+                updatedAt: Date.now(), // Always update the timestamp
+            };
+
+            // Add merchnatTxnId only if the transaction is being created
+            if (!existingTransaction) {
+                updateObject.orderId = order.transactionId
+                updateObject.merchantTxnId = `SELLER_TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                updateObject.createdAt = Date.now(); // Set createdAt only for new transactions
+            }
+
+            // Create or update the seller-specific transaction
+            await Transaction.findOneAndUpdate(
+                { orderId: order.transactionId },
+                updateObject,
+                { upsert: true, new: true , session}
+            );
+        }
+    } catch (error) {
+        console.error("[Seller Transaction Processing Error]", error);
+        throw error;
+    }
+  }
+
+  async createSinglePaymentForMultiSellers(transactionIds, totalAmount, user) {
+    let session;
+    try {
+
+        session = await mongoose.startSession()
+        session.startTransaction(); // Begin the transaction
+
+        // Validate input
+        if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
+            throw new BadRequestParameterError("Invalid or missing transaction IDs");
+        }
+
+        const orders = [];
+        let calculatedTotalAmount = 0;
+
+        // Fetch and validate all orders
+        for (const transactionId of transactionIds) {
+            const order = await Order.findOne({ transactionId }).session(session);
+            if (!order) {
+                throw new BadRequestParameterError(`Invalid transaction ID: ${transactionId}`);
+            }
+            if (!order.quote || !order.quote.price || !order.quote.price.value) {
+                throw new BadRequestParameterError(`Quote price missing for order: ${transactionId}`);
+            }
+
+            // Add order to the list and calculate total amount
+            orders.push(order);
+            calculatedTotalAmount += Number(order.quote.price.value);
+        }
+
+        // Validate total amount
+        if (calculatedTotalAmount !== totalAmount) {
+            throw new BadRequestParameterError(
+                `Amount mismatch: Expected ₹${calculatedTotalAmount}, received ₹${totalAmount}`
+            );
+        }
+
+        // Generate a single merchant transaction ID for the entire payment
+        const merchantTransactionId = `PHONEPE_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(7)}`;
+
+        const payload = {
+            merchantId: this.merchantId,
+            merchantTransactionId: merchantTransactionId,
+            merchantUserId: user.decodedToken.uid,
+            amount: totalAmount * 100, // Convert to paise
+            mobileNumber: user.data.phone,
+            callbackUrl: `${this.appUrl}/clientApis/v2/phonepe/webhook`,
+            paymentInstrument: {
+                type: "PAY_PAGE",
+            },
+        };
+
+        // Encode Payload to Base64
+        const base64Body = Buffer.from(JSON.stringify(payload)).toString("base64");
+        const payEndPoint = "/pg/v1/pay";
+
+        // Calculate Checksum
+        const checksum = this._calculateChecksum(base64Body, payEndPoint);
+
+        // Create a single transaction record for the total payment
+        const totalTransaction = new Transaction({
+            amount: totalAmount,
+            merchantTxnId: merchantTransactionId,
+            orderId: null, // This is the parent transaction
+            orderTransactionIds: transactionIds, // Store the transaction IDs of all seller orders
+            status: "INITIALIZE-PAYMENT",
+            createdAt: Date.now(),
+        });
+
+        // Save the total transaction within the session
+        await totalTransaction.save({ session });
+
+        // Commit the transaction
+        await session.commitTransaction();
+        session.endSession();
+
+        // Return platform-specific response
+        return {
+            success: true,
+            statusCode: 200,
+            message: "Payment initialized for all sellers",
+            payload: base64Body,
+            checksum,
+            apiEndpoint: payEndPoint,
+            merchantTransactionId,
+        };
+    } catch (error) {
+
+        if(session){
+          // Rollback the transaction in case of an error
+          await session.abortTransaction();
+          session.endSession();
+        }
+
+        if (error instanceof BadRequestParameterError) {
+            throw error;
+        }
+        console.error("[PhonePe Multi-Seller Payment Error]", error);
+        throw error;
+    }
+}
+  
+async processPaymentWebhook(signature, encodedResponse) {
+  let session;
+  try {
+      
+      session = await mongoose.startSession()
+      session.startTransaction()
+
+      // Step 1: Verify the webhook signature
+      const verify = this._verifyWebhookSignature(signature, encodedResponse);
+
+      if (!verify) {
+        throw new BadRequestParameterError("Invalid webhook signature");
+      }
+
+      // Step 2: Decode base64 response and parse JSON
+      const decodedPayload = JSON.parse(
+        Buffer.from(encodedResponse, "base64").toString()
+      );
+
+      if (!decodedPayload || !decodedPayload?.data) {
+        throw new BadRequestParameterError("Invalid webhook signature");
+      }
+
+      // Step 3: Find the parent transaction using merchantTransactionId
+      const parentTransaction = await Transaction.findOne({
+        merchantTxnId: decodedPayload?.data?.merchantTransactionId,
+      }).session(session); // Use the session;
+      if (!parentTransaction) {
+        throw new NoRecordFoundError("Parent transaction not found");
+      }
+
+      // Step 4: Update parent transaction status based on PhonePe event state
+      switch (decodedPayload.code) {
+        case "PAYMENT_SUCCESS":
+            parentTransaction.status = "SUCCESS";
+            parentTransaction.payment = decodedPayload.data?.paymentInstrument;
+            parentTransaction.paymentId = decodedPayload.data?.transactionId
+            break;
+        case "PAYMENT_ERROR":
+            parentTransaction.status = "FAILED";
+            break;
+        case "PAYMENT_PENDING":
+            parentTransaction.status = "PENDING";
+            break;
+        default:
+            parentTransaction.status = "FAILED";
+            break;
+     }
+
+     // Save the updated parent transaction within the session
+     await parentTransaction.save({ session });
+
+      // Step 5: Process seller-specific transactions if payment is successful
+      if (parentTransaction.status === "SUCCESS") {
+        await this.processSellerTransactions(parentTransaction, session); // Pass the session
+      }
+
+      // Commit the transaction
+      await session.commitTransaction();
+      session.endSession();
+
+      return { success: true, message: "Payment processed successfully" };
+  } catch (error) {
+
+      if(session){
+        await session.abortTransaction();
+        session.endSession();
+      }
+
+      if (error instanceof BadRequestParameterError) {
+          throw error;
+      }
+      console.error("[PhonePe Webhook Processing Error]", error);
+      throw error;
+  }
+}
+ 
+  async paymentStatusForMultiSeller(merchantTransactionId) {
+    let session;
+    try {
+        // Start a new database session
+        session = await mongoose.startSession();
+        session.startTransaction();
+
+        // Step 1: Find the parent transaction using merchantTransactionId
+        const parentTransaction = await Transaction.findOne({
+            merchantTxnId: merchantTransactionId,
+        }).session(session);
+
+        if (!parentTransaction) {
+            throw new NoRecordFoundError("Parent transaction not found");
+        }
+
+        // Step 2: Prepare checksum verification
+        const string = `/pg/v1/status/${this.merchantId}/${merchantTransactionId}${this.saltKey}`;
+        const calculatedChecksum = crypto.createHash("sha256").update(string).digest("hex");
+
+        // Step 3: Fetch payment status from PhonePe
+        const paymentStatus = await this._fetchPaymentStatus(
+            merchantTransactionId,
+            calculatedChecksum
+        );
+
+        // Step 4: Validate the payment status response
+        if (!paymentStatus || paymentStatus?.error) {
+            throw new Error(paymentStatus.message || "PhonePe API Error");
+        }
+
+        // Step 5: Update parent transaction status based on PhonePe event state
+        switch (paymentStatus.code) {
+            case "PAYMENT_SUCCESS":
+                parentTransaction.status = "SUCCESS";
+                parentTransaction.payment = paymentStatus.data?.paymentInstrument;
+                parentTransaction.paymentId = paymentStatus.data?.transactionId; // Store the main payment ID
+                break;
+            case "PAYMENT_ERROR":
+                parentTransaction.status = "FAILED";
+                break;
+            case "PAYMENT_PENDING":
+                parentTransaction.status = "PENDING";
+                break;
+            default:
+                parentTransaction.status = "FAILED";
+                break;
+        }
+
+        // Save the updated parent transaction
+        await parentTransaction.save({ session });
+
+        // Step 6: Process seller-specific transactions if payment is successful
+        if (parentTransaction.status === "SUCCESS") {
+            await this.processSellerTransactions(parentTransaction , session);
+        }
+ 
+        // Step 7: Confirm order if payment is successful
+        if (parentTransaction.status === "SUCCESS") {
+
+          // Step 7: Construct the response in the required format
+          const orders = await Order.find({ transactionId: { $in: parentTransaction.orderTransactionIds } }).session(session);;
+          const responseData = orders.map(order => ({
+            context: {
+                domain: order.domain,
+                city: order.city, // Replace with actual city code if available
+                parent_order_id: order.parentOrderId || parentTransaction.transactionId, // Parent order ID
+                transaction_id: order.transactionId, // Transaction ID for the specific order
+            },
+            message: {
+                payment: {
+                    paid_amount: order?.quote?.price?.value, // Paid amount for the specific order
+                    type: order?.payment?.type || "ON-ORDER", // Payment type
+                    status: order?.payment?.status, // Payment status
+                    "@ondc/org/settlement_basis": order?.settlementDetails["@ondc/org/settlement_basis"],
+                    "@ondc/org/settlement_window": order?.settlementDetails["@ondc/org/settlement_window"], // Settlement window
+                    "@ondc/org/withholding_amount": order?.settlementDetails["@ondc/org/withholding_amount"], // Withholding amount @ondc/org/withholding_amount
+                },
+                providers: {
+                    id: order.provider.id, // provider ID
+                },
+            },
+          }));
+
+            // Commit current transaction before starting new one
+            await session.commitTransaction();
+            session.endSession();
+            session = null;
+
+            return await confirmOrderService.confirmMultipleOrder(
+                responseData,
+                merchantTransactionId,
+                session
+            );
+        }
+
+        // For non-successful payments, commit and return status
+        await session.commitTransaction();
+        return {
+            status: paymentStatus.data?.code || 400,
+            merchantTransactionId,
+            message: paymentStatus.message,
+        };
+    } catch (error) {
+        if(session){
+          await session.abortTransaction();
+        }
+        if (error instanceof NoRecordFoundError) {
+            throw error;
+        }
+        console.error("[Payment Verification Error]", error);
+        throw error;
+    } finally{
+        if(session){
+          session.endSession()
+        }
+    }
+}
 
   async createPayments(transactionId, data, user) {
     try {
@@ -410,44 +766,168 @@ class PhonePeService {
       throw error;
     }
   }
+  
+  async initiateRefund(sellerOrderId, refundAmount,existingSession = null) {
 
-  async initiateRefund(transactionOrderDetails, refundAmount) {
+    // Use existing session if provided, otherwise create new one
+    const session = existingSession || await mongoose.startSession();
+    if (!existingSession) {
+        session.startTransaction();
+    }
+
     try {
 
+      // Fetch the seller-specific transaction
+      const sellerTransaction = await Transaction.findOne({ orderId: sellerOrderId }).session(session);;
+      if (!sellerTransaction) {
+          throw new NoRecordFoundError("Seller transaction not found");
+      }
+
+      // Fetch the parent transaction
+      const parentTransaction = await Transaction.findOne({ merchantTxnId: sellerTransaction.parentTransactionId }).session(session);;
+      if (!parentTransaction) {
+          throw new NoRecordFoundError("Parent transaction not found");
+      }
+
+      // Validate refund amount
+      if (refundAmount > sellerTransaction.amount) {
+        throw new BadRequestParameterError("Refund amount exceeds seller's transaction amount");
+      }
+
+      if(sellerTransaction.status === "REFUNDED"){
+        throw new BadRequestParameterError("Amount is already refunded")
+      }
+
       // Generate unique refund transaction ID
-      const refundTxnId = `REF_${transactionOrderDetails.orderId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const refundTxnId = `REF_${sellerOrderId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
       // Create refund record with transaction
       const refundRecord = await this._createRefundRecord(
         {
-            originalTransactionId: transactionOrderDetails.orderId,
+            originalTransactionId: parentTransaction.merchnatTxnId,
             refundTransactionId: refundTxnId,
+            sellerTransactionId: sellerTransaction.transactionId, // Seller-specific transaction ID
+            parentTransactionId: parentTransaction.transactionId, // Parent transaction ID for reference
             amount: refundAmount,
             status: 'INITIATED',
-            refundType: "FULL"
+            refundType: refundAmount === sellerTransaction.amount ? "FULL" : "PARTIAL"
         },
+        session
     );
 
       // Initiate refund with retry mechanism
       const refundResult = await this._processRefundWithRetry(
         refundRecord,
-        transactionOrderDetails
+        sellerTransaction,
+        1,
+        session
       );
 
-      if(refundResult){
+      if (!refundResult) {
+        console.error(`Refund failed for transactionId: ${sellerOrderId}`);
+        // Log failure in database for manual intervention
+
+        // Notify admin-support for manual action
+
+      } else {
+        // Update OrderModel based on refund status
+        if (refundResult.code === "PAYMENT_PENDING") {
+          await Order.findOneAndUpdate(
+            { transactionId: sellerTransaction.orderId },
+            {
+              "refund.status": "PROCESSING",
+              "refund.processingAt": new Date(),
+              updatedAt: new Date(),
+            },
+            { session }
+          );
+        } else if (refundResult.code === "PAYMENT_SUCCESS") {
+          await Order.findOneAndUpdate(
+            { transactionId: sellerTransaction.orderId },
+            {
+              "payment.status": "REFUNDED",
+              "refund.status": "COMPLETED",
+              "refund.refundId": refundResult.data?.transactionId,
+              "refund.amount": refundAmount,
+              "refund.completedAt": new Date(),
+              "state": "REFUNDED",
+              updatedAt: new Date(),
+            },
+            { session }
+          );
+
+          // Update ParentTransaction
+          const totalRefundedAmount = await Transaction.aggregate([
+            {
+              $match: {
+                parentTransactionId: parentTransaction.merchnatTxnId,
+                status: "REFUNDED",
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalRefunded: { $sum: "$amount" },
+              },
+            },
+          ]).session(session);;
+
+          if (totalRefundedAmount[0]?.totalRefunded === parentTransaction.amount) {
+            // Full refund: Update parent transaction status
+            await Transaction.findOneAndUpdate(
+              { merchnatTxnId: parentTransaction.merchnatTxnId },
+              {
+                status: "REFUNDED",
+                updatedAt: new Date(),
+              },
+              { session }
+            );
+          } else {
+            // Partial refund: Increment refunded amount in parent transaction
+            await Transaction.findOneAndUpdate(
+              { merchnatTxnId: parentTransaction.merchnatTxnId },
+              {
+                $inc: { refundedAmount: refundAmount },
+                updatedAt: new Date(),
+              },
+              { session }
+            );
+          }
+        } else {
+          await Order.findOneAndUpdate(
+            { transactionId: sellerTransaction.orderId },
+            {
+              "refund.status": "FAILED",
+              "refund.failedAt": new Date(),
+              updatedAt: new Date(),
+            },
+            { session }
+          );
+        }
+
         // Example: Notify user of refund Initiated (implement notification logic)
+
         // await this._sendRefundCompletionNotification(refundRecord.userId);
+
       }
 
+      if (!existingSession) {
+        await session.commitTransaction();
+        session.endSession();
+      }
       return refundResult;
 
     } catch (error) {
       console.error("[PhonePe Refund Error]", error);
+      if (!existingSession) {
+        await session.abortTransaction();
+        session.endSession();
+      }
       return 
     }
   }
 
-  async handleRefundWebhook(signature, encodedResponse) {
+async handleRefundWebhook(signature, encodedResponse) {
     try {
       // Step 1: Verify the webhook signature
       const isVerified = this._verifyWebhookSignature(signature, encodedResponse);

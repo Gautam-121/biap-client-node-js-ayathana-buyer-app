@@ -16,6 +16,17 @@ const refundSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    sellerTransactionId: { 
+        type: String,
+        required: true // Seller-specific transaction ID (e.g., SELLER_TXN_987654321)
+    },
+    parentTransactionId: { 
+        type: String,
+        required: true // Parent transaction ID for reference
+    },
+    refundId:{
+        type:String
+    },
     amount: { // 
         type: Number,
         required: true
