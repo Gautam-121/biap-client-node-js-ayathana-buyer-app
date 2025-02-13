@@ -195,7 +195,7 @@ class InitOrderService {
      * @param {Object} response 
      * @param {Object} dbResponse
      */
-    async updateOrder(response, dbResponse) {
+    async updateOrder(response, dbResponse, session) {
 
         //console.log("update order-------------------->",dbResponse);
         //console.log("update order-----------response--------->",response);
@@ -264,8 +264,10 @@ class InitOrderService {
             }
 
             await addOrUpdateOrderWithTransactionIdAndProvider(
-                response?.context?.transaction_id,dbResponse.provider.id,
-                { ...orderSchema }
+                response?.context?.transaction_id,
+                dbResponse.provider.id,
+                { ...orderSchema },
+                session
             );
         }
     }
@@ -557,7 +559,11 @@ class InitOrderService {
     * @param {Object} messageIds
     */
     async onInitMultipleOrder(messageIds) {
+        let session;
         try {
+
+            session = await mongoose.startSession(); // Start a new session
+            session.startTransaction(); // Begin the transaction
 
             const onInitOrderResponse = await Promise.all(
                 messageIds.map(async messageId => {
@@ -573,11 +579,15 @@ class InitOrderService {
                         //console.log("protocolInitResponse------------->",protocolInitResponse);
                         //console.log("protocolInitResponse-------provider------>",protocolInitResponse.message.order.provider);
 
-                        let dbResponse = await getOrderByTransactionIdAndProvider(protocolInitResponse?.context?.transaction_id,protocolInitResponse?.message.order.provider.id);
+                        let dbResponse = await getOrderByTransactionIdAndProvider(
+                            protocolInitResponse?.context?.transaction_id,
+                            protocolInitResponse?.message.order.provider.id,
+                            session
+                        );
 
                         //console.log("on init --protocolInitResponse--dbResponse",dbResponse);
 
-                        await this.updateOrder(protocolInitResponse, dbResponse);
+                        await this.updateOrder(protocolInitResponse, dbResponse , session);
 
                         dbResponse = dbResponse?.toJSON();
 
@@ -594,9 +604,16 @@ class InitOrderService {
                 })
             );
 
+            await session.commitTransaction(); // Commit the transaction
+            session.endSession();
+
             return onInitOrderResponse;
         }
         catch (err) {
+            if(session){
+                await session.abortTransaction(); // Rollback the transaction
+                session.endSession();
+            }
             throw err;
         }
     }

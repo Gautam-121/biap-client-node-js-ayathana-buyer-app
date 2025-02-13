@@ -201,13 +201,19 @@ class ConfirmOrderService {
      * @returns
      */
     async processOnConfirmResponse(response = {}) {
+        let session;
         try {
+
+            session = await mongoose.startSession(); // Start a new session
+            session.startTransaction(); // Begin the transaction
 
             console.log("processOnConfirmResponse------------------------------>",response)
             console.log("processOnConfirmResponse------------------------------>",response?.message?.order.provider)
             if (response?.message?.order) {
                 const dbResponse = await getOrderByTransactionIdAndProvider(
-                    response?.context?.transaction_id,response?.message?.order.provider.id
+                    response?.context?.transaction_id,
+                    response?.message?.order.provider.id,
+                    session
                 );
 
                 let orderSchema = { ...response?.message?.order };
@@ -234,7 +240,7 @@ class ConfirmOrderService {
                         id:fulfillment.id,
                         state:fulfillment.state.descriptor.code,
                         orderId:orderSchema.id
-                    })
+                    }).session(session)
                     if(!existingFulfillment){
                         await FulfillmentHistory.create({
                             orderId:orderSchema.id,
@@ -242,7 +248,7 @@ class ConfirmOrderService {
                             id:fulfillment.id,
                             state:fulfillment.state.descriptor.code,
                             updatedAt:orderSchema.toString()
-                        })
+                        },{session})
                     }
                     console.log("existingFulfillment--->",existingFulfillment);
                     // }
@@ -302,25 +308,34 @@ class ConfirmOrderService {
                 orderSchema.domain= response?.context.domain
 
                 await addOrUpdateOrderWithTransactionIdAndProvider(
-                    response.context.transaction_id,dbResponse.provider.id,
-                    { ...orderSchema }
+                    response.context.transaction_id,
+                    dbResponse.provider.id,
+                    { ...orderSchema },
+                    session
                 );
 
                 let billingContactPerson = orderSchema.billing.phone
                 let provider = orderSchema.provider.descriptor.name
+                // TODO send email Notification
                 await sendAirtelSingleSms(billingContactPerson, [provider], 'ORDER_PLACED', false)
-
                 response.parentOrderId = dbResponse?.[0]?.parentOrderId;
                 //clear cart
 
-                cartService.clearCart({userId:dbResponse.userId}); //TODO: clear cart once order placed in multicart flows
-                
+                const itemIds = dbResponse.items.map(item => item.id)
+                cartService.clearCartItemsForOrder({userId:dbResponse.userId , itemIds}); //TODO: clear cart once order placed in multicart flows
             }
 
-
+            // Commit the transaction
+            await session.commitTransaction();
+            session.endSession();
             return response;
         }
         catch (err) {
+            if(session){
+                // Rollback the transaction in case of an error
+                await session.abortTransaction();
+                session.endSession();
+            }
             throw err;
         }
     }

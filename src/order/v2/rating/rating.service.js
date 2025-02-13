@@ -104,8 +104,6 @@ class RatingService {
 
     async getRating(rating,id) {
         try {
-
-
             const ratings = await Rating.find({ orderId: id }).lean();
             console.log(ratings)
             return ratings

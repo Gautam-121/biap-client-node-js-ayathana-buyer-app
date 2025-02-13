@@ -368,6 +368,41 @@ class CartService {
         }
     }
 
+    async clearCartItemsForOrder(data , session) {
+        try {
+            
+            // Find the cart within the transaction
+            const cart = await Cart.findOne({ userId: data.userId }).session(session);
+            if (!cart) {
+                throw new BadRequestParameterError("Cart not found");
+            }
+    
+            // Delete only the cart items associated with the confirmed order
+            const deletedItems = await CartItem.deleteMany({
+                cart: cart._id,
+                "item.id": { $in: data.itemIds } // `data.itemIds` contains the IDs of items to be removed
+            }).session(session);
+    
+            // If no items were deleted, throw an error
+            if (deletedItems.deletedCount === 0) {
+                throw new BadRequestParameterError("No matching cart items found to remove");
+            }
+    
+            // Check if the cart still has items
+            const remainingItems = await CartItem.countDocuments({ cart: cart._id }).session(session);
+            if (remainingItems === 0) {
+                // If no items are left, delete the cart itself
+                await Cart.deleteOne({ _id: cart._id }).session(session);
+            }
+            return { success: true, message: 'Cart items cleared successfully' };
+        } catch (err) {    
+            if (err instanceof BadRequestParameterError) {
+                throw err;
+            }
+            throw err;
+        }
+    }
+
 }
 
 export default CartService;

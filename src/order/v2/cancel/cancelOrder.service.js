@@ -20,10 +20,11 @@ import FulfillmentHistory from "../../v2/db/fulfillmentHistory.js";
 import Settlements from "../../v2/db/settlement.js";
 import Transaction from "../../../razorPay/db/transaction.js";
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
-
+import BppUpdateService from "../update/bppUpdate.service.js"
 
 const bppCancelService = new BppCancelService();
 const phonePeService = new PhonePeService()
+const bppUpdateService = new BppUpdateService()
 
 
 class CancelOrderService {
@@ -127,7 +128,9 @@ class CancelOrderService {
     }
 
     async onCancelOrderDbOperation(messageId) {
+        let session;
         try {
+
             let protocolCancelResponse = await onOrderCancel(messageId);
 
             if (!(protocolCancelResponse && protocolCancelResponse.length)) {
@@ -147,6 +150,9 @@ class CancelOrderService {
             else {
                 if (!(protocolCancelResponse?.[0].error)) {
 
+                    session = await mongoose.startSession(); // Start a new session
+                    session.startTransaction(); // Begin the transaction
+
                     protocolCancelResponse = protocolCancelResponse?.[0];
 
                     console.log("protocolCancelResponse----------------->", protocolCancelResponse);
@@ -154,7 +160,7 @@ class CancelOrderService {
                     // message: { order: { id: '7488750', state: 'Cancelled', tags: [Object] } }
                     const dbResponse = await OrderMongooseModel.find({
                         transactionId: protocolCancelResponse.context.transaction_id, id: protocolCancelResponse.message.order.id
-                    });
+                    }).session(session);
 
                     console.log("dbResponse----------------->", dbResponse);
 
@@ -178,7 +184,7 @@ class CancelOrderService {
                             let dbFl = await Fulfillments.findOne({
                                 orderId: protocolCancelResponse?.message?.order.id,
                                 id: fl.id
-                            });
+                            }).session(session);
 
                             if (!dbFl) {
                                 // Save new fulfillment
@@ -197,7 +203,7 @@ class CancelOrderService {
                                 else {
                                     newFl.type = 'orderFulfillment';
                                 }
-                                dbFl = await newFl.save();
+                                dbFl = await newFl.save({session});
                             } else {
                                 dbFl.state = fl.state;
                                 if (fl.type === 'RTO') {
@@ -206,14 +212,14 @@ class CancelOrderService {
                                 else if(f1.type === "Cancel"){
                                     dbFl.tags = f1.tags
                                 }
-                                await dbFl.save();
+                                await dbFl.save({session});
                             }
 
                             // Create fulfillment history
                             let existingFulfillment = await FulfillmentHistory.findOne({
                                 id: fl.id,
                                 state: fl.state.descriptor.code
-                            });
+                            }).session(session);
 
                             if (!existingFulfillment) {
                                 await FulfillmentHistory.create({
@@ -222,60 +228,57 @@ class CancelOrderService {
                                     id: fl.id,
                                     state: fl.state.descriptor.code,
                                     updatedAt: protocolCancelResponse?.message?.order?.updated_at?.toString()
-                                });
+                                },{session});
                             }
 
                             // // Refund processing for both Normal Cancellation and RTO
                             let refundAmount = 0;
+                            let additionalCharges = 0;
                             let isRefundRequired = false;
 
                             // Determine refund amount and necessity
-                            if (fl.type === 'RTO' && fl.state?.descriptor?.code === 'RTO-Initiated') {
+                            if ((fl.type === 'RTO' && fl.state?.descriptor?.code === 'RTO-Initiated') || (fl.type === 'Cancel' && fl.state?.descriptor?.code === 'Cancelled') ) {
                                 isRefundRequired = true;
                                 let quoteTrails = fl.tags.filter(i => i.code === 'quote_trail');
 
                                 for (let trail of quoteTrails) {
                                     let amount = trail?.list?.find(i => i.code === 'value')?.value ?? 0;
-                                    refundAmount += Math.abs(parseFloat(amount))
-                                }
-                            }
-                            // Add condition for normal cancellation
-                            else if (fl.type === 'Cancel' && fl.state?.descriptor?.code === 'Cancelled' ) {
-                                isRefundRequired = true;
-                                // Calculate total refund from quote trail
-                                let quoteTrails = fl.tags.filter(i => i.code === 'quote_trail');
-
-                                for (let trail of quoteTrails) {
-                                    let amount = trail?.list?.find(i => i.code === 'value')?.value ?? 0;
-                                    refundAmount += Math.abs(parseFloat(amount))
+                                    if (amount > 0) {
+                                        additionalCharges += amount; // Additional charges to the buyer
+                                    } else {
+                                        refundAmount += Math.abs(amount); // Refunds to the buyer
+                                    }
                                 }
                             }
 
 
                             // Process refund if required
                             if (isRefundRequired) {
+                                // Calculate net refund to the buyer
+                                const netRefund = refundAmount - additionalCharges;
+
                                 // Check if settlement already exists
                                 let oldSettlement = await Settlements.findOne({
                                     orderId: dbFl.orderId,
                                     fulfillmentId: dbFl.id
-                                });
+                                }).session(session);
 
                                 if (!oldSettlement) {
                                     // Refund processing
                                     let settlement_type = "upi";
                                     let txnDetails = await Transaction.findOne({
-                                        transactionId: protocolCancelResponse.context.transaction_id
-                                    });
+                                        orderId: protocolCancelResponse.context.transaction_id
+                                    }).session(session);
 
                                     if (!txnDetails) {
                                         throw new NoRecordFoundError("Transaction Record Not Found");
                                     }
 
-                                    if(txnDetails.amount < refundAmount){
+                                    if(txnDetails.amount < netRefund){
                                         throw new BadRequestParameterError("Refund amound is gretaer than initial confirm amount")
                                     }
 
-                                    settlement_type = txnDetails?.payment?.method ?? 'upi';
+                                    settlement_type = txnDetails?.payment?.type ?? 'upi';
                                     let settlementContext = protocolCancelResponse.context;
                                     let settlementTimeStamp = new Date();
 
@@ -311,7 +314,7 @@ class CancelOrderService {
                                                             "settlement_counterparty": "buyer",
                                                             "settlement_phase": "refund",
                                                             "settlement_type": settlement_type,
-                                                            "settlement_amount": refundAmount,
+                                                            "settlement_amount": netRefund,
                                                             "settlement_timestamp": settlementTimeStamp
                                                         }
                                                     ]
@@ -329,17 +332,18 @@ class CancelOrderService {
 
                                     // Process refund
                                     await phonePeService.initiateRefund(
-                                        txnDetails,
-                                        Math.abs(refundAmount)
+                                        txnDetails.orderId,
+                                        netRefund,
+                                        session
                                     );
 
                                     // Save settlement details
                                     let newSettlement = new Settlements();
                                     newSettlement.orderId = dbFl.orderId;
                                     newSettlement.fulfillmentId = dbFl.id;
-                                    newSettlement.refundAmount = Math.abs(refundAmount);
+                                    newSettlement.refundAmount = netRefund
                                     newSettlement.settlementType = settlement_type;
-                                    await newSettlement.save();
+                                    await newSettlement.save({session});
                                 }
                             }
 
@@ -351,7 +355,7 @@ class CancelOrderService {
                             let fulfillmentStatus = await Fulfillments.findOne({
                                 id: item.fulfillment_id,
                                 orderId: protocolCancelResponse.message.order.id
-                            });
+                            }).session(session);
 
                             let updatedItem = orderSchema.items.filter(element => element.id === item.id);
                             let temp = updatedItem[0];
@@ -370,9 +374,16 @@ class CancelOrderService {
                         //TODO: refund amount in full cancellation
                         await addOrUpdateOrderWithTransactionIdAndOrderId(
                             protocolCancelResponse.context.transaction_id, protocolCancelResponse.message.order.id,
-                            { ...orderSchema }
+                            { ...orderSchema },
+                            session
                         );
                     }
+                }
+
+                if(session){
+                    // Commit the transaction
+                    await session.commitTransaction();
+                    session.endSession();
                 }
 
                 return protocolCancelResponse;
@@ -380,6 +391,12 @@ class CancelOrderService {
 
         }
         catch (err) {
+            // Rollback the transaction in case of an error
+            if(session){
+                await session.abortTransaction();
+                session.endSession();
+            }
+            console.error("[onCancelOrderDbOperation Error]", err);
             throw err;
         }
     }

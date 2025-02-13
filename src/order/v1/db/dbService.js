@@ -42,7 +42,7 @@ const addOrUpdateOrderWithTransactionIdAndProvider = async (transactionId, provi
 
 };
 
-const addOrUpdateOrderWithTransactionIdAndOrderId = async (transactionId, orderId, orderSchema = {}) => {
+const addOrUpdateOrderWithTransactionIdAndOrderId = async (transactionId, orderId, orderSchema = {} , session) => {
 
 
     // console.log("items------------------->",transactionId,orderSchema.items)
@@ -54,7 +54,7 @@ const addOrUpdateOrderWithTransactionIdAndOrderId = async (transactionId, orderI
         {
             ...orderSchema
         },
-        { upsert: true }
+        session ?  { upsert: true , session } : { upsert: true} 
     );
 
 };

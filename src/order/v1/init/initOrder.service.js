@@ -180,8 +180,9 @@ class InitOrderService {
             }
 
             await addOrUpdateOrderWithTransactionIdAndProvider(
-                response?.context?.transaction_id,dbResponse.provider.id,
-                { ...orderSchema }
+                response?.context?.transaction_id,
+                dbResponse.provider.id,
+                { ...orderSchema },
             );
         }
     }
