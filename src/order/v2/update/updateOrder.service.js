@@ -50,8 +50,12 @@ class UpdateOrderService {
     * @param {Object} orderRequest
     */
     async update(orderRequest,user) {
+        let session;
         try {
 
+            // Start a new session and transaction
+            session = await mongoose.startSession();
+            session.startTransaction();
 
             const orderDetails = await getOrderById(orderRequest.id);
 
@@ -201,7 +205,7 @@ class UpdateOrderService {
                 dbFulfillment.images = item.tags.image
                 dbFulfillment.type =type
                 dbFulfillment.id =fulfillmentId;
-                await dbFulfillment.save();
+                await dbFulfillment.save({ session }); // Save within the transaction
             }
 
             let  fulfilment =
@@ -228,8 +232,7 @@ class UpdateOrderService {
             const request = data.data
             const requestType = data.context.action
             const orderSaved =new OrderRequestLogMongooseModel({requestType,transactionId,messageId,request})
-
-            await orderSaved.save();
+            await orderSaved.save({ session }); // Save within the transaction
 
             const { message = {} } = orderRequest || {};
             //const { update_target,order } = message || {};
@@ -238,6 +241,9 @@ class UpdateOrderService {
                 throw new CustomError("BPP Id is mandatory");
             }
 
+            // Commit the transaction
+            await session.commitTransaction();
+            session.endSession();
 
             return await bppUpdateService.update(
                 context,
@@ -247,6 +253,11 @@ class UpdateOrderService {
             );
         }
         catch (err) {
+            // Rollback the transaction in case of an error
+            if (session) {
+                await session.abortTransaction();
+                session.endSession();
+            }
             throw err;
         }
     }
@@ -431,10 +442,14 @@ class UpdateOrderService {
     }
 
     async onUpdateDbOperation(messageId) {
+        let session;
         try {
 
-            let protocolUpdateResponse = await onUpdateStatus(messageId);
+            // Start a new session and transaction
+            session = await mongoose.startSession();
+            session.startTransaction();
 
+            let protocolUpdateResponse = await onUpdateStatus(messageId);
             console.log("Inside on_updateDBOperation" , protocolUpdateResponse)
 
             if (!(protocolUpdateResponse && protocolUpdateResponse.length)) {
@@ -454,7 +469,6 @@ class UpdateOrderService {
             else {
                 if (!(protocolUpdateResponse?.[0].error)) {
 
-
                     protocolUpdateResponse = protocolUpdateResponse?.[0];
 
                     console.log("orderDetails?.updatedQuote?.price?.value----->",protocolUpdateResponse.message.order.quote?.price?.value)
@@ -463,7 +477,7 @@ class UpdateOrderService {
                     const dbResponse = await OrderMongooseModel.find({
                         transactionId: protocolUpdateResponse.context.transaction_id,
                         id: protocolUpdateResponse.message.order.id
-                    });
+                    }).session(session);
 
                     if (!(dbResponse || dbResponse.length))
                         throw new NoRecordFoundError();
@@ -499,7 +513,7 @@ class UpdateOrderService {
 
                         for(let fl of fulfillments){
                             //find if fl present
-                            let dbFl = await Fulfillments.findOne({orderId:protocolUpdateResponse?.message?.order.id,id:fl.id});
+                            let dbFl = await Fulfillments.findOne({orderId:protocolUpdateResponse?.message?.order.id,id:fl.id}).session(session);;
 
                             console.log("dbFl--->",dbFl)
                             if(!dbFl){
@@ -514,21 +528,21 @@ class UpdateOrderService {
                                 }else{
                                     newFl.type='orderFulfillment';
                                 }
-                                dbFl = await newFl.save();
+                                dbFl = await newFl.save({session});
 
                             }else{
                                 dbFl.state = fl.state;
                                 if(fl.type ==='Return' || fl.type ==='Cancel'){
                                     dbFl.tags = fl.tags;
                                 }
-                                await dbFl.save();
+                                await dbFl.save({session});
                             }
 
                                 // if(fulfillment.type==='Delivery'){
                                 let existingFulfillment  =await FulfillmentHistory.findOne({
                                     id:fl.id,
                                     state:fl.state.descriptor.code
-                                })
+                                }).session(session)
                                 if(!existingFulfillment){
                                     await FulfillmentHistory.create({
                                         orderId:protocolUpdateResponse?.message?.order.id,
@@ -536,24 +550,32 @@ class UpdateOrderService {
                                         id:fl.id,
                                         state:fl.state.descriptor.code,
                                         updatedAt:protocolUpdateResponse?.message?.order?.updated_at?.toString()
-                                    })
+                                    },{ session })
                                 }
                                 // }
 
-                            if(fl?.state?.descriptor?.code ==='Cancelled' || fl?.state?.descriptor?.code ==='Return_Picked'|| fl?.state?.descriptor?.code ==='Liquidated'){
+                            if(['Cancelled', 'Return_Picked', 'Liquidated'].includes(fl?.state?.descriptor?.code)){
                                 //calculate refund amount from qoute trail
                                 //check if settlement already done!
 
                                 let qouteTrails = fl.tags.filter(i=> i.code==='quote_trail');
                                 let refundAmount = 0;
-                                for(let trail of qouteTrails){
-                                    let amount =trail?.list?.find(i=>i.code==='value')?.value??0;
-                                    refundAmount+=Math.abs(parseFloat(amount))
+                                let additionalCharges = 0;
+                                for (let trail of qouteTrails) {
+                                    let amount = trail?.list?.find(i => i.code === 'value')?.value ?? 0;
+                                    if (amount > 0) {
+                                        additionalCharges += parseFloat(amount); // Additional charges to the buyer
+                                    } else {
+                                        refundAmount += Math.abs(parseFloat(amount)); // Refunds to the buyer
+                                    }
                                 }
+
+                                const netRefund = refundAmount - additionalCharges;
+
 
                                 //refund details
                                 let settlement_type = "upi"
-                                let txnDetails= await Transaction.findOne({transactionId:protocolUpdateResponse.context.transaction_id});
+                                let txnDetails= await Transaction.findOne({orderId:protocolUpdateResponse.context.transaction_id}).session(session);;
 
                                 if (!txnDetails) {
                                     throw new NoRecordFoundError("Transaction Record Not Found");
@@ -564,7 +586,7 @@ class UpdateOrderService {
                                     settlement_type = txnDetails?.payment?.method??'upi'
                                 }
 
-                                let oldSettlement = await Settlements.findOne({orderId:dbFl.orderId,fulfillmentId:dbFl.id})
+                                let oldSettlement = await Settlements.findOne({orderId:dbFl.orderId,fulfillmentId:dbFl.id}).session(session);
                                 if(!oldSettlement){
 
                                     if(txnDetails.amount < refundAmount){
@@ -611,7 +633,7 @@ class UpdateOrderService {
                                                                             "settlement_counterparty":"buyer",
                                                                             "settlement_phase":"refund",
                                                                             "settlement_type":settlement_type,
-                                                                            "settlement_amount":`${refundAmount}`, //TODO; fix this post qoute calculation
+                                                                            "settlement_amount": netRefund, //TODO; fix this post qoute calculation
                                                                             "settlement_timestamp":settlementTimeStamp
                                                                         }
                                                                     ]
@@ -625,19 +647,20 @@ class UpdateOrderService {
                                     newSettlement.orderId = dbFl.orderId;
                                     newSettlement.settlement = updateRequest;
                                     newSettlement.fulfillmentId = dbFl.id;
-                                    await newSettlement.save();
+                                    await newSettlement.save({ session });
 
                                     // Send update request
                                     await bppUpdateService.update(
                                         updateRequest.context,
-                                        updateRequest.message,
+                                        "payment",
                                         updateRequest.message
                                     );
 
                                     // Process refund
                                     await phonePeService.initiateRefund(
-                                        txnDetails,
-                                        refundAmount
+                                        txnDetails.orderId,
+                                        netRefund,
+                                        session
                                     )
                                 }
                             }
@@ -647,7 +670,7 @@ class UpdateOrderService {
                         let updateItems = []
                        for(let item of protocolItems){
                             let updatedItem = {}
-                            let fulfillmentStatus = await Fulfillments.findOne({id:item.fulfillment_id,orderId:protocolUpdateResponse.message.order.id}); //TODO: additional filter of order id required
+                            let fulfillmentStatus = await Fulfillments.findOne({id:item.fulfillment_id,orderId:protocolUpdateResponse.message.order.id}).session(session);; //TODO: additional filter of order id required
                            
 
                             // updatedItem = orderSchema.items.filter(element=> element.id === item.id && !element.tags); //TODO TEMP testing
@@ -670,7 +693,8 @@ class UpdateOrderService {
 
                         await addOrUpdateOrderWithdOrderId(
                             protocolUpdateResponse.message.order.id,
-                            { ...orderSchema }
+                            { ...orderSchema },
+                            session
                         );
 
                     }

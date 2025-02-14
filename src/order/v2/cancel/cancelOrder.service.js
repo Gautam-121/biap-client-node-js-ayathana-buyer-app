@@ -244,9 +244,9 @@ class CancelOrderService {
                                 for (let trail of quoteTrails) {
                                     let amount = trail?.list?.find(i => i.code === 'value')?.value ?? 0;
                                     if (amount > 0) {
-                                        additionalCharges += amount; // Additional charges to the buyer
+                                        additionalCharges += parseFloat(amount); // Additional charges to the buyer
                                     } else {
-                                        refundAmount += Math.abs(amount); // Refunds to the buyer
+                                        refundAmount += Math.abs(parseFloat(amount)); // Refunds to the buyer
                                     }
                                 }
                             }
@@ -323,6 +323,14 @@ class CancelOrderService {
                                         }
                                     };
 
+                                    // Save settlement details
+                                    let newSettlement = new Settlements();
+                                    newSettlement.orderId = dbFl.orderId;
+                                    newSettlement.fulfillmentId = dbFl.id;
+                                    newSettlement.refundAmount = netRefund
+                                    newSettlement.settlementType = settlement_type;
+                                    await newSettlement.save({session});
+
                                     // Send update request
                                     await bppUpdateService.update(
                                         updateRequest.context,
@@ -337,13 +345,7 @@ class CancelOrderService {
                                         session
                                     );
 
-                                    // Save settlement details
-                                    let newSettlement = new Settlements();
-                                    newSettlement.orderId = dbFl.orderId;
-                                    newSettlement.fulfillmentId = dbFl.id;
-                                    newSettlement.refundAmount = netRefund
-                                    newSettlement.settlementType = settlement_type;
-                                    await newSettlement.save({session});
+    
                                 }
                             }
 

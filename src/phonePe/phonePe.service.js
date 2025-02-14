@@ -526,7 +526,6 @@ async processPaymentWebhook(signature, encodedResponse) {
             return await confirmOrderService.confirmMultipleOrder(
                 responseData,
                 merchantTransactionId,
-                session
             );
         }
 
