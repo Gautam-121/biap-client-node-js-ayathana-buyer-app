@@ -2,16 +2,16 @@ import Transaction from '../razorPay/db/transaction.js';
 import Order from '../order/v1/db/order.js';
 import crypto from 'crypto';
 import BadRequestParameterError from '../lib/errors/bad-request-parameter.error.js';
-import ConfirmOrderService from "../order/v2/confirm/confirmOrder.service.js";
+// import ConfirmOrderService from "../order/v2/confirm/confirmOrder.service.js";
 import axios from 'axios';
 import NoRecordFoundError from '../lib/errors/no-record-found.error.js';
 import RefundModel from '../razorPay/db/refund.js';
 import mongoose from "mongoose"
-const confirmOrderService = new ConfirmOrderService();
-
+// const confirmOrderService = new ConfirmOrderService();
 
 class PhonePeService {
-  constructor() {
+  constructor(confirmOrderService) {
+    this.confirmOrderService = confirmOrderService
     this.merchantId = process.env.PHONEPE_MERCHANT_ID || "PGTESTPAYUAT78";
     this.saltKey = process.env.PHONEPE_SALT_KEY || "b843d817-f5e8-4d36-8917-1c6e045a1af9";
     this.saltIndex = process.env.PHONEPE_SALT_INDEX || 1;
@@ -523,7 +523,7 @@ async processPaymentWebhook(signature, encodedResponse) {
             session.endSession();
             session = null;
 
-            return await confirmOrderService.confirmMultipleOrder(
+            return await this.confirmOrderService.confirmMultipleOrder(
                 responseData,
                 merchantTransactionId,
             );
@@ -753,7 +753,7 @@ async processPaymentWebhook(signature, encodedResponse) {
       }
 
       // Confirm order if payment is successful
-      return await confirmOrderService.confirmMultipleOrder(
+      return await this.confirmOrderService.confirmMultipleOrder(
         confirmdata,
         merchantTransactionId
       );

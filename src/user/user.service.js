@@ -926,8 +926,12 @@ class UserService {
             }
 
             if(existingUser.isFirstLogin && existingUser.authProvider !== "mobile") {
-                if (!name || !phone || !gender) {
-                    throw new BadRequestParameterError('Please provide all required fields: name, phone, and gender.');
+                // if (!name || !phone || !gender) {
+                //     throw new BadRequestParameterError('Please provide all required fields: name, phone, and gender.');
+                // }
+
+                if (!phone) {
+                    throw new BadRequestParameterError('Please provide all required field:phone');
                 }
     
                 if (email && email !== existingUser.email) {
@@ -957,10 +961,10 @@ class UserService {
             if (queryConditions.length > 0) {
                 const conflictingUser = await UserMongooseModel.findOne({ $or: queryConditions });
                 if (conflictingUser) {
-                    if (conflictingUser.email === email.trim().toLowerCase()) {
+                    if (email && conflictingUser.email === email.trim().toLowerCase()) {
                         throw new ConflictError('The provided email is already associated with another account.');
                     }
-                    if (conflictingUser.phone === phone.trim()) {
+                    if (phone && conflictingUser.phone === phone.trim()) {
                         throw new ConflictError('This phone number is already registered');
                     }
                 }
@@ -1010,7 +1014,7 @@ class UserService {
             };
         } catch (error) {
             console.error('Error updating user details:', error);
-            if (error instanceof UnauthenticatedError || error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
+            if (error instanceof ConflictError || error instanceof UnauthenticatedError || error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
                 throw error;
             }
             throw new Error('An error occurred while updating user details. Please try again.');
@@ -1193,7 +1197,7 @@ class UserService {
             const existingInterestForm = await Interest.findOne({email: sanitizedEmail})
 
             if (existingInterestForm) {
-                throw new ConflictError(`Invite request already exist with email:${email}`)
+                throw new ConflictError(`Invite request already exist with email:${sanitizedEmail}`)
             }
 
             const interest = await Interest.create({
@@ -1229,12 +1233,12 @@ class UserService {
             const invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
-                throw new NoRecordFoundError(`No invitation found for the provided email: ${email}`);
+                throw new NoRecordFoundError(`No invitation found for the provided email: ${sanitizedEmail}`);
             }
     
             return {
                 success: true,
-                message: `An invitation exists for the email: ${email}`,
+                message: `An invitation exists for the email: ${sanitizedEmail}`,
                 data: {
                     _id: invite._id,
                     name: invite.name,
@@ -1265,14 +1269,14 @@ class UserService {
             const invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
-                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}.`);
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${sanitizedEmail}.`);
             }
 
             if(invite.status === "pending"){
                 throw new BadRequestParameterError("The invitation is still pending. Please wait for approval.")
             }
 
-            if(invite.staus === "registered"){
+            if(invite.status === "registered"){
                 throw new BadRequestParameterError("The invite email already complete registration")
             }
 
@@ -1308,7 +1312,7 @@ class UserService {
         try {
 
             // Start Transaction
-            session = await mongoose.startTransaction
+            session = await mongoose.startSession();
             session.startTransaction()
 
             const { email } = request;
@@ -1317,14 +1321,14 @@ class UserService {
             let invite = await Interest.findOne({ email: sanitizedEmail });
     
             if (!invite) {
-                throw new NoRecordFoundError(`No valid invitation found for the email: ${email}`);
+                throw new NoRecordFoundError(`No valid invitation found for the email: ${sanitizedEmail}`);
             }
 
             if(invite.status === "pending"){
                 throw new BadRequestParameterError("The invitation is still pending. Please wait for approval.")
             }
 
-            if(invite.staus === "registered"){
+            if(invite.status === "registered"){
                 throw new BadRequestParameterError("The invite email already complete registration")
             }
     

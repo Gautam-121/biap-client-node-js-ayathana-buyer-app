@@ -15,7 +15,7 @@ class CartService {
         try {
             session.startTransaction(); // Begin the transaction
 
-            let items = await bppSearchService.getItemDetails({ id: data.itemId }).session(session);
+            let items = await bppSearchService.getItemDetails({ id: data.itemId })
             if (!items) {
                 throw new NoRecordFoundError(`Item not found with id: ${data.itemId}`);
             }
@@ -93,6 +93,11 @@ class CartService {
                 cartItem.item = processingData;
                 cartItem.location_id = data.location_details?.id;
                 await cartItem.save({ session }); // Save within the transaction
+
+                await session.commitTransaction(); // Commit the transaction
+                session.endSession(); // End the session
+
+                return cartItem
             } else {
                 // Create a new cart
                 let newCart = await new Cart({ userId: data.userId, location_id: data.location_details?.id }).save({ session });
@@ -103,11 +108,12 @@ class CartService {
                 cartItem.location_id = data.location_details?.id;
                 cartItem.item = processingData;
                 await cartItem.save({ session }); // Save within the transaction
-            }
 
-            await session.commitTransaction(); // Commit the transaction
-            session.endSession(); // End the session
-            return { success: true, message: 'Item added to cart successfully' };
+                await session.commitTransaction(); // Commit the transaction
+                session.endSession(); // End the session
+
+                return cartItem
+            }
         } catch (err) {
             await session.abortTransaction(); // Abort the transaction on error
             session.endSession(); // End the session
@@ -125,7 +131,7 @@ class CartService {
             session.startTransaction(); // Begin the transaction
 
             // Fetch item details within the transaction
-            let items = await bppSearchService.getItemDetails({ id: data.itemId }).session(session);
+            let items = await bppSearchService.getItemDetails({ id: data.itemId })
             if (!items) {
                 throw new NoRecordFoundError(`Item not found with id: ${data.itemId}`);
             }
@@ -210,7 +216,7 @@ class CartService {
 
             await session.commitTransaction(); // Commit the transaction
             session.endSession(); // End the session
-            return { success: true, message: 'Cart item updated successfully' };
+            return cartItem
         } catch (err) {
             await session.abortTransaction(); // Abort the transaction on error
             session.endSession(); // End the session

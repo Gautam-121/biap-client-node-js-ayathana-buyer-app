@@ -13,88 +13,88 @@ router.get( // done
 
 // search
 router.get(
-    '/v2/search/global/items',authentication(),  searchController.globalSearchItems,
+    '/v2/search/global/items',  searchController.globalSearchItems,
 );
 
 // get item details
 router.get(
-    '/v2/items/:id', authentication(),searchController.getItem,
+    '/v2/items/:id',searchController.getItem,
 );
 
 // get item details
 router.get(
-    '/v2/providers/:itemId',authentication(), searchController.getProvider,
+    '/v2/providers/:itemId', searchController.getProvider,
 );
 
 // get item details
 router.get(
-    '/v2/provider-details',authentication(), searchValidator.providerDetails , searchController.getProvideDetails,
+    '/v2/provider-details', searchValidator.providerDetails , searchController.getProvideDetails,
 );
 // get item details
 router.get(
-    '/v2/location-details',authentication(),searchController.getLocationDetails,
-);
-
-// get item details
-router.get(
-    '/v2/item-details/:id',authentication(),searchController.getItemDetails,
+    '/v2/location-details', searchController.getLocationDetails,
 );
 
 // get item details
 router.get(
-    '/v2/locations/:id',authentication(),  searchController.getLocation,
+    '/v2/item-details/:id', searchController.getItemDetails,
+);
+
+// get item details
+router.get(
+    '/v2/locations/:id',   searchController.getLocation,
 );
 
 
 router.get(
-    '/v2/attributes',authentication(), searchValidator.attributes ,  searchController.getAttributes,
+    '/v2/attributes',  searchValidator.attributes ,  searchController.getAttributes,
 );
 
 router.get(
-    '/v2/items',authentication(), searchController.getItems,
+    '/v2/items',  searchController.getItems,
 );
 
 router.get(
-    '/v2/locations',authentication(),  searchController.getLocations,
+    '/v2/locations',   searchController.getLocations,
 );
 
 router.get(
-    '/v2/nearlocations',authentication(),  searchController.getLocationsNearest,
+    '/v2/nearlocations',  searchController.getLocationsNearest,
 );
 
 router.get(
-    '/v2/servieablelocations',authentication(),  searchController.servieablelocations,
+    '/v2/servieablelocations',   searchController.servieablelocations,
 );
 
 // get item attributes values
 router.get(
-    '/v2/attributeValues',authentication(), searchValidator.attributesValues,  searchController.getAttributesValues,
+    '/v2/attributeValues',  searchValidator.attributesValues,  searchController.getAttributesValues,
 );
 
 // get providers
 router.get(
-    '/v2/providers',authentication(), searchValidator.provider , searchController.getProviders,
+    '/v2/providers',  searchValidator.provider , searchController.getProviders,
 );
 
 // get providers
 router.get(
-    '/v2/search/global/providers',authentication(),  searchController.getGlobalProviders,
+    '/v2/search/global/providers',   searchController.getGlobalProviders,
 );
 
 // get custom menus
 router.get(
-    '/v2/custom-menus',authentication(),  searchController.getCustomMenu,
+    '/v2/custom-menus',   searchController.getCustomMenu,
 );
 
 // get offers
 router.get(
-    '/v2/offers',authentication(),  searchController.getOffers,
+    '/v2/offers',   searchController.getOffers,
 );
 
 
 // get offers
 router.get(
-    '/v2/categories',authentication(),  searchController.getUniqueCategories,
+    '/v2/categories',  searchController.getUniqueCategories,
 );
 
 

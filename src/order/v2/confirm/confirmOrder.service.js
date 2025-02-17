@@ -10,7 +10,6 @@ import {
 import ContextFactory from "../../../factories/ContextFactory.js";
 import BppConfirmService from "./bppConfirm.service.js";
 import JuspayService from "../../../payment/juspay.service.js";
-import PhonePeService from "../../../phonePe/phonePe.service.js";
 import CartService from "../cart/v2/cart.service.js";
 import FulfillmentHistory from "../db/fulfillmentHistory.js";
 import sendAirtelSingleSms from "../../../utils/sms/smsUtils.js";
@@ -18,12 +17,15 @@ import OrderMongooseModel from "../../v1/db/order.js";
 import axios from "axios";
 import Fulfillments from "../db/fulfillments.js";
 import dbConnect from "../../../database/mongooseConnector.js";
+import PhonePeService from "../../../phonePe/phonePe.service.js";
 const bppConfirmService = new BppConfirmService();
 const cartService = new CartService();
 const juspayService = new JuspayService();
-const phonePeService = new PhonePeService()
 import mongoose from 'mongoose';
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
+
+// Pass `this` as a reference to PhonePeService
+const phonePeService = new PhonePeService(this);
 class ConfirmOrderService {
 
     /**

@@ -28,8 +28,8 @@ class DeliveryAddressService {
                     phone: request?.descriptor?.phone?.trim(),
                     email: request?.descriptor?.email?.trim().toLowerCase()
                 },
-                gps: `${request?.address?.lat?.trim()},${request?.address?.lng?.trim()}`, 
                 defaultAddress: true, 
+                gps: request?.address?.lat + "," +  request?.address?.lng, 
                 address: {
                     areaCode: request?.address?.areaCode?.trim(),
                     door: request?.address?.door?.trim(),
@@ -39,8 +39,8 @@ class DeliveryAddressService {
                     state: request?.address?.state?.trim(),
                     tag: request?.address?.tag?.trim(),
                     country: request?.address?.country?.trim(),
-                    lat: request?.address?.lat?.trim()  , 
-                    lng: request?.address?.lng?.trim()
+                    lat: request?.address?.lat, 
+                    lng: request?.address?.lng
                 }, 
             };
     
@@ -84,6 +84,8 @@ class DeliveryAddressService {
                     lat: storedDeliveryAddress?.address?.lat, 
                     lng: storedDeliveryAddress?.address?.lng 
                 },
+                createdAt: storedDeliveryAddress.createdAt,
+                updatedAt: storedDeliveryAddress.updatedAt
             };
         } catch (err) {
             // Log error for debugging and rethrow
@@ -167,7 +169,7 @@ class DeliveryAddressService {
                     phone: request?.descriptor?.phone.trim(),
                     email: request?.descriptor?.email?.trim().toLowerCase()
                 },
-                gps: `${request?.address?.lat?.trim()},${request?.address?.lng?.trim()}`,
+                gps: `${request?.address?.lat},${request?.address?.lng}`,
                 defaultAddress: request?.defaultAddress,
                 address: {
                     areaCode: request?.address?.areaCode?.trim(),
@@ -178,13 +180,13 @@ class DeliveryAddressService {
                     state: request?.address?.state?.trim(),
                     tag: request?.address?.tag?.trim(),
                     country: request?.address?.country?.trim(),
-                    lat: request?.address?.lat?.trim(),
-                    lng: request?.address?.lng?.trim()
+                    lat: request?.address?.lat,
+                    lng: request?.address?.lng
                 }
             };
     
             // Find the existing delivery address by its ID
-            const storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne(
+            let storedDeliveryAddress = await DeliveryAddressMongooseModel.findOne(
                 { id, userId },
                 { defaultAddress: 1 },
                 { session }
@@ -223,9 +225,6 @@ class DeliveryAddressService {
 
                 }
             );
-    
-            // Convert the document to JSON for returning the result
-            storedDeliveryAddress = storedDeliveryAddress?.toJSON();
 
             // Commit the transaction
             await session.commitTransaction();
@@ -260,8 +259,8 @@ class DeliveryAddressService {
             }
 
             console.error('Error in UpdateDeliveryAddress:', {
-                error: err.message,
-                stack: err.stack
+                error: error.message,
+                stack: error.stack
             });
 
             if(error instanceof BadRequestParameterError || error instanceof NoRecordFoundError ){
@@ -343,8 +342,8 @@ class DeliveryAddressService {
                 session.endSession();
             }
             console.error('Error in deleteDeliveryAddress:', {
-                error: err.message,
-                stack: err.stack
+                error: error.message,
+                stack: error.stack
             });
 
             if(error instanceof NoRecordFoundError) throw error

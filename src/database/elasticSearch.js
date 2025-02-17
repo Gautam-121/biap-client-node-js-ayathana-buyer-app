@@ -41,9 +41,9 @@ const client = new Client({
 const testConnection = async () => {
   try {
     const response = await client.info();
-    logger.info('Connected to Elasticsearch:', { response });
+    console.info('Connected to Elasticsearch:', { response });
   } catch (error) {
-    logger.error('Failed to connect to Elasticsearch:', { error });
+    console.error('Failed to connect to Elasticsearch:', { error });
     throw new Error('Elasticsearch connection failed');
   }
 };

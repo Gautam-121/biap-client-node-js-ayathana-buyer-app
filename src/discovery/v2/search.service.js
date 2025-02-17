@@ -467,17 +467,17 @@ class SearchService {
       }
   
       // Handle geo distance filter
-      if (searchRequest.latitude && searchRequest.longitude) {
-        filterQuery.push({
-          geo_distance: {
-            distance: searchRequest.distance || '10km',
-            "location_details.gps": {
-              lat: parseFloat(searchRequest.latitude),
-              lon: parseFloat(searchRequest.longitude),
-            },
-          }
-        });
-      }
+      // if (searchRequest.latitude && searchRequest.longitude) {
+      //   filterQuery.push({
+      //     geo_distance: {
+      //       distance: searchRequest.distance || '10km',
+      //       "location_details.gps": {
+      //         lat: parseFloat(searchRequest.latitude),
+      //         lon: parseFloat(searchRequest.longitude),
+      //       },
+      //     }
+      //   });
+      // }
   
       // Construct the final query
       const finalQuery = {

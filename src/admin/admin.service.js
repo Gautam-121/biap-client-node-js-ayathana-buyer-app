@@ -6,6 +6,7 @@ import UnauthenticatedError from '../lib/errors/unauthenticated.error.js';
 import Admin from "./db/admin.js"
 import Interest from '../user/db/interest.js';
 import EmailService from '../utils/email/email.service.js';
+import mongoose from "mongoose"
 
 const emailService = new EmailService()
 
@@ -177,7 +178,7 @@ class AdminService {
                 throw new BadRequestParameterError(`An active invite already exists and has not expired.`)
             }
 
-            if(invite.staus === "registered"){
+            if(interest.status === "registered"){
                 throw new BadRequestParameterError("The invite email already complete registration")
             }
     

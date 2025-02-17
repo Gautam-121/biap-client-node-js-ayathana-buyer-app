@@ -30,13 +30,8 @@ const user =  {
             .optional()
             .trim()
             .isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters')
-            .matches(/^(?!\d)[a-zA-Z0-9]+$/).withMessage('Name must not start with a number and should contain alphanumeric characters')
-            .custom(value => {
-                if (/^\d+$/.test(value)) {
-                    throw new Error('Name should not be only numbers');
-                }
-                return true;
-            }),
+            .matches(/^[a-zA-Z\s]*$/)
+            .withMessage('Name can only contain letters and spaces'),
         body('email')
             .optional()
             .trim()
