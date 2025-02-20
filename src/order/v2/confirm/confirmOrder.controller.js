@@ -1,5 +1,6 @@
 import ConfirmOrderService from './confirmOrder.service.js';
 import BadRequestParameterError from '../../../lib/errors/bad-request-parameter.error.js';
+import { validationResult } from 'express-validator';
 
 const confirmOrderService = new ConfirmOrderService();
 class ConfirmOrderController {
@@ -75,7 +76,6 @@ class ConfirmOrderController {
         
         if(messageIds && messageIds.length && messageIds.trim().length) { 
             const messageIdArray = messageIds.split(",");
-            
             confirmOrderService.onConfirmMultipleOrder(messageIdArray).then(orders => {
                 res.json(orders);
             }).catch((err) => {

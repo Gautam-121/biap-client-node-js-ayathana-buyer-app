@@ -380,7 +380,8 @@ class CartService {
             // Find the cart within the transaction
             const cart = await Cart.findOne({ userId: data.userId }).session(session);
             if (!cart) {
-                throw new BadRequestParameterError("Cart not found");
+               console.error("Cart not found");
+                return;
             }
     
             // Delete only the cart items associated with the confirmed order
@@ -391,7 +392,8 @@ class CartService {
     
             // If no items were deleted, throw an error
             if (deletedItems.deletedCount === 0) {
-                throw new BadRequestParameterError("No matching cart items found to remove");
+                console.error("No items found to delete");
+                return;
             }
     
             // Check if the cart still has items

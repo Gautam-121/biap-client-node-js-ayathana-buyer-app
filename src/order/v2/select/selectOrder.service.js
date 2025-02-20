@@ -65,7 +65,7 @@ class SelectOrderService {
     async selectOrder(orderRequest) {
         try {
             const { context: requestContext, message = {} } = orderRequest || {};
-            const { cart = {}, fulfillments = [], offers=[] } = message;
+            let { cart = {}, fulfillments = [], offers=[] } = message;
     
             //get bpp_url and check if item is available
             let itemContext={}
@@ -197,10 +197,13 @@ class SelectOrderService {
             );
         }
         catch (err) {
+            console.error("Error in selectOrder" , {
+                message: err.message,
+                stack: err.stack
+            })
             if(err instanceof NoRecordFoundError || err instanceof BadRequestParameterError){
                 throw err
             }
-            console.error("Error in selectOrder" , err.message)
             throw err;
         }
     }
@@ -250,8 +253,19 @@ class SelectOrderService {
             // } else {
                 // return this.transform(protocolSelectResponse?.[0]);
             // }
-
-            if(protocolSelectResponse?.error?.code){
+            if(protocolSelectResponse?.error?.code === 500){
+                const contextFactory = new ContextFactory();
+                const context = contextFactory.create({
+                    messageId: messageId,
+                    action: PROTOCOL_CONTEXT.ON_SELECT
+                });
+            
+                return {
+                    context,
+                    error: protocolSelectResponse?.error
+                };
+            }
+            else if(protocolSelectResponse?.error?.code){
                 return this.transform(protocolSelectResponse)
             }
             else{

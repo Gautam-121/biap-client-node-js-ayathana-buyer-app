@@ -21,6 +21,8 @@ import Settlements from "../../v2/db/settlement.js";
 import Transaction from "../../../razorPay/db/transaction.js";
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 import BppUpdateService from "../update/bppUpdate.service.js"
+import mongoose from "mongoose";
+import { v4 } from 'uuid';
 
 const bppCancelService = new BppCancelService();
 const phonePeService = new PhonePeService()
@@ -197,7 +199,7 @@ class CancelOrderService {
                                     newFl.tags = fl.tags;
                                 } 
                                 else if (fl.type === 'Cancel') {
-                                    newFl.type = f1.type;
+                                    newFl.type = fl.type;
                                     newFl.tags = fl.tags;
                                 }
                                 else {
@@ -210,7 +212,7 @@ class CancelOrderService {
                                     dbFl.tags = fl.tags;
                                 }
                                 else if(f1.type === "Cancel"){
-                                    dbFl.tags = f1.tags
+                                    dbFl.tags = fl.tags
                                 }
                                 await dbFl.save({session});
                             }
@@ -222,15 +224,17 @@ class CancelOrderService {
                             }).session(session);
 
                             if (!existingFulfillment) {
-                                await FulfillmentHistory.create({
-                                    orderId: protocolCancelResponse?.message?.order.id,
-                                    type: fl.type,
-                                    id: fl.id,
-                                    state: fl.state.descriptor.code,
-                                    updatedAt: protocolCancelResponse?.message?.order?.updated_at?.toString()
-                                },{session});
+                                await FulfillmentHistory.create(
+                                    [
+                                        {
+                                            orderId: protocolCancelResponse?.message?.order.id,
+                                            type: fl.type,
+                                            id: fl.id,
+                                            state: fl.state.descriptor.code,
+                                            updatedAt: protocolCancelResponse?.message?.order?.updated_at?.toString()
+                                        }
+                                    ],{session});
                             }
-
                             // // Refund processing for both Normal Cancellation and RTO
                             let refundAmount = 0;
                             let additionalCharges = 0;
@@ -293,7 +297,7 @@ class CancelOrderService {
                                             "bpp_id": settlementContext.bpp_id,
                                             "bpp_uri": settlementContext.bpp_uri,
                                             "transaction_id": settlementContext.transaction_id,
-                                            "message_id": uuidv4(),
+                                            "message_id": v4(),
                                             "city": settlementContext.city,
                                             "country": settlementContext.country,
                                             "timestamp": settlementTimeStamp
@@ -314,7 +318,7 @@ class CancelOrderService {
                                                             "settlement_counterparty": "buyer",
                                                             "settlement_phase": "refund",
                                                             "settlement_type": settlement_type,
-                                                            "settlement_amount": netRefund,
+                                                            "settlement_amount": String(netRefund),
                                                             "settlement_timestamp": settlementTimeStamp
                                                         }
                                                     ]

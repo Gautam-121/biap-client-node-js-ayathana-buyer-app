@@ -1,3 +1,5 @@
+import UserMongooseModel from "../user/db/user.js"
+
 // Add new method to check if phone verification is needed
 const checkPhoneVerificationStatus = async (userId) => {
     try {

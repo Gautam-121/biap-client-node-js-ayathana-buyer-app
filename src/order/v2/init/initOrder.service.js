@@ -10,7 +10,7 @@ import SearchService from "../../../discovery/v2/search.service.js";
 const bppSearchService = new SearchService();
 const bppInitService = new BppInitService();
 import crypto from 'crypto'
-import { response } from "express";
+import mongoose from "mongoose"
 import DeliveryAddressMongooseModel from "../../../accounts/deliveryAddress/db/deliveryAddress.js";
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 
@@ -52,7 +52,7 @@ class InitOrderService {
      * @param {String} userId
      * @param {String} parentOrderId
      */
-    async createOrder(response, userId = null, orderRequest) {
+    async createOrder(response, userId = null, orderRequest , context) {
         if (response) {
             const provider = orderRequest?.items?.[0]?.provider || {};
 
@@ -181,7 +181,9 @@ class InitOrderService {
                     provider: { ...providerDetails },
                     items:itemProducts ,
                     offers:orderRequest.offers,
-                    paymentType:"ON-ORDER"
+                    paymentType:"ON-ORDER",
+                    domain:context.domain,
+                    city:context.city
                 }
             );
         }
@@ -444,16 +446,16 @@ class InitOrderService {
                             transaction_id: order?.context?.transaction_id,
                         },
                         message: {
-                            items: order?.items.map(item => ({
+                            items: order?.message?.items.map(item => ({
                                 itemId: item?.itemId,
                                 quantity: item?.quantity,
                                 customizations: item?.customizations
                             })),
-                            fulfillments: order?.fulfillments.map(fulfillment => ({ 
+                            fulfillments: order?.message?.fulfillments.map(fulfillment => ({ 
                                 id: fulfillment?.id,
                                 type: fulfillment.type
                             })),
-                            offers: order?.offers,
+                            offers: order?.message?.offers,
                             billing_info: {
                                 address: {
                                     door: storedDeliveryAddress?.address?.door,
@@ -472,7 +474,7 @@ class InitOrderService {
                                 email: storedDeliveryAddress?.descriptor?.email
                             },
                             delivery_info: {
-                                type: order?.fulfillments[0].type || "Delivery",
+                                type: order?.message?.fulfillments[0].type || "Delivery",
                                 name: storedDeliveryAddress?.descriptor?.name,
                                 phone: storedDeliveryAddress?.descriptor?.phone,
                                 email: storedDeliveryAddress?.descriptor?.email,
@@ -493,17 +495,19 @@ class InitOrderService {
                                 }
                             },
                             payment: {
-                                type: order?.payment?.type
+                                type: order?.message?.payment?.type
                             }
                         }
                     }
+
+                    console.log("TransFormData" , transformedOrder)
                     
                     const bppResponse = await this.initOrder(transformedOrder, orders.length > 1);
 
                     if(bppResponse?.error && Object.keys(bppResponse?.error).length == 0){
                         return bppResponse
                     }
-                    await this.createOrder(bppResponse, user?.decodedToken?.uid, transformedOrder?.message);
+                    await this.createOrder(bppResponse, user?.decodedToken?.uid, transformedOrder?.message , transformedOrder?.context);
                     return bppResponse;
                 }
                 catch (err) {
@@ -527,6 +531,8 @@ class InitOrderService {
     async onInitOrder(messageId) {
         try {
             let protocolInitResponse = await onOrderInit(messageId);
+
+            console.log("protocolInitResponse" , protocolInitResponse)
 
             if (!(protocolInitResponse && protocolInitResponse.length) ||
                 protocolInitResponse?.[0]?.error

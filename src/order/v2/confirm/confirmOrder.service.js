@@ -17,17 +17,18 @@ import OrderMongooseModel from "../../v1/db/order.js";
 import axios from "axios";
 import Fulfillments from "../db/fulfillments.js";
 import dbConnect from "../../../database/mongooseConnector.js";
-import PhonePeService from "../../../phonePe/phonePe.service.js";
+// import PhonePeService from "../../../phonePe/phonePe.service.js";
 const bppConfirmService = new BppConfirmService();
 const cartService = new CartService();
 const juspayService = new JuspayService();
 import mongoose from 'mongoose';
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 
-// Pass `this` as a reference to PhonePeService
-const phonePeService = new PhonePeService(this);
+// const phonePeService = new PhonePeService();
 class ConfirmOrderService {
-
+    constructor(phonePeService) {
+        this.phonePeService = phonePeService;
+    }
     /**
      *
      * @param {Array} items
@@ -169,7 +170,7 @@ class ConfirmOrderService {
             // Check if the seller confirmed the order
             if (!bppConfirmResponse?.message?.ack || bppConfirmResponse?.message?.ack?.status === "NACK") {
                 // Seller did not confirm the order, initiate refund
-                await phonePeService.initiateRefund(dbResponse.transactionId, Number(dbResponse.quote.price.value) , session);        
+                await this.phonePeService.initiateRefund(dbResponse.transactionId, Number(dbResponse.quote.price.value) , session);        
             }
 
             return bppConfirmResponse;
@@ -324,7 +325,7 @@ class ConfirmOrderService {
                 //clear cart
 
                 const itemIds = dbResponse.items.map(item => item.id)
-                cartService.clearCartItemsForOrder({userId:dbResponse.userId , itemIds}); //TODO: clear cart once order placed in multicart flows
+                await cartService.clearCartItemsForOrder({userId:dbResponse.userId , itemIds} , session); //TODO: clear cart once order placed in multicart flows
             }
 
             // Commit the transaction
@@ -337,6 +338,10 @@ class ConfirmOrderService {
                 // Rollback the transaction in case of an error
                 await session.abortTransaction();
                 session.endSession();
+            }
+
+            if(err instanceof BadRequestParameterError){
+                throw err
             }
             throw err;
         }
@@ -406,56 +411,62 @@ class ConfirmOrderService {
      * confirm multiple orders
      * @param {Array} orders
      */
-    async confirmMultipleOrder(orders,paymentData) {
-        let session;
-        try {
-            session = await mongoose.startSession();
-            session.startTransaction();
-            let total = 0;
-            orders.forEach(order => {
-                total += order?.message?.payment?.paid_amount;
-            });
+    async confirmMultipleOrder(orders, paymentData) {
+        const results = []; // To store the results of each order confirmation
     
-            console.log(orders)
-            const confirmOrderResponse = await Promise.all(
-                orders.map(async orderRequest => {
-                    try {
-                        if(paymentData){
-                            return await this.confirmAndUpdateOrder(orderRequest, total, true,paymentData,session);
-                        }else{
-                            return await this.confirmAndUpdateOrder(orderRequest, total, false,paymentData,session);
+        for (const orderRequest of orders) {
+            let session;
+            try {
+                session = await mongoose.startSession();
+                session.startTransaction();
+    
+                let total = 0;
+                orders.forEach(order => {
+                    total += order?.message?.payment?.paid_amount || 0;
+                });
+    
+                // Attempt to confirm and update the order
+                const response = await this.confirmAndUpdateOrder(
+                    orderRequest,
+                    total,
+                    !!paymentData, // Convert to boolean
+                    paymentData,
+                    session
+                );
+    
+                // Commit the transaction for this specific order
+                await session.commitTransaction();
+                results.push(response); // Store the successful result
+            } catch (err) {
+                // Log the error and add it to the results
+                console.error(`Error processing order: ${orderRequest.context.transaction_id}`, err);
+                results.push({
+                    context: orderRequest.context,
+                    message: {
+                        "ack":{
+                           "status":"NACK"
                         }
+                    },
+                    error:{
+                        type: err.name || "BAD-REQUEST-PARAMETER",
+                        code: err.code || 400,
+                        message: err.response?.data || err.message,
+                    },
+                });
     
-                    }
-                    catch (err) {
-                        return {
-                            error: true,
-                            context: orderRequest.context,
-                            message: err.response?.data || err.message
-                        };
-                    }
-                })
-            );
-    
-            // Check if any orders failed
-            const hasFailures = confirmOrderResponse.some(response => response.error);
-            if (hasFailures) {
-                await session.abortTransaction();
-                return confirmOrderResponse;
-            }
-    
-            await session.commitTransaction();
-            return confirmOrderResponse;
-        } catch (error) {
-            if (session) {
-                await session.abortTransaction();
-            }
-            throw error;
-        } finally {
-            if (session) {
-                session.endSession();
+                // Abort the transaction for this specific order
+                if (session) {
+                    await session.abortTransaction();
+                }
+            } finally {
+                // End the session for this specific order
+                if (session) {
+                    session.endSession();
+                }
             }
         }
+    
+        return results; // Return all successful results
     }
 
     async getOrderDetails(orderId,user){

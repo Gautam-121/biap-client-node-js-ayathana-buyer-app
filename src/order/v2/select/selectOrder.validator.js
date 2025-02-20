@@ -35,7 +35,7 @@ const selectValidator = {
         // Optional customizations validation
         body('*.message.cart.items.*.customizations')
             .optional()
-            .isArray({min:1})
+            .isArray()
             .withMessage('Customizations must be an array with at least one customization'),
 
         body('*.message.cart.items.*.customizations.*.groupId')

@@ -532,6 +532,18 @@ const protocolSupport = async (data) => {
     );
 
     const result = await apiCall.send();
+    // Check if result.data exists
+    if (!result.data) {
+        return {
+          message : { ack : { status : "NACK" }},
+          error:{
+             type: "server-error",
+             code: 500,
+             message: "Internal Server Error"
+          }
+        }
+    }
+    console.log("resultData" , result.data)
     return result.data;
 }
 
@@ -631,6 +643,17 @@ const protocolUpdate = async (data) => {
     );
 
     const result = await apiCall.send();
+    if (!result.data) {
+        return {
+          message : { ack : { status : "NACK" }},
+          error:{
+             type: "server-error",
+             code: 500,
+             message: "Internal Server Error"
+          }
+        }
+    }
+    console.log("resultData" , result.data)
     return result.data;
 };
 
@@ -696,7 +719,17 @@ const onOrderSelect = async (messageId) => {
     );
 
     const result = await apiCall.send();
-    console.log("result" , result)
+     // Check if result.data exists
+     if (!result.data) {
+        return {
+          message : { ack : { status : "NACK" }},
+          error:{
+             type: "server-error",
+             code: 500,
+             message: "Internal Server Error"
+          }
+        }
+    }
     return result.data;
 };
 

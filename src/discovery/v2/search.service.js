@@ -2784,16 +2784,16 @@ async getProviders(searchRequest, targetLanguage = "en") {
     let filterArray = [];
     let limit = parseInt(searchRequest.limit) || 10;
 
-    // Add geo distance filter
-    filterArray.push({
-      geo_distance: {
-        distance: searchRequest.distance || '10km',
-        "location_details.gps": {
-          lat: parseFloat(searchRequest.latitude),
-          lon: parseFloat(searchRequest.longitude),
-        },
-      },
-    });
+    // // Add geo distance filter
+    // filterArray.push({
+    //   geo_distance: {
+    //     distance: searchRequest.distance || '10km',
+    //     "location_details.gps": {
+    //       lat: parseFloat(searchRequest.latitude),
+    //       lon: parseFloat(searchRequest.longitude),
+    //     },
+    //   },
+    // });
 
     // Main query
     let query_obj = {

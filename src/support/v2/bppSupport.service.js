@@ -20,7 +20,7 @@ class BppSupportService {
                         
             const response = await protocolSupport(supportRequest);
             
-            return { context: context, message: response.message };
+            return { context: context, message: response.message , error: response.error };
         }
         catch (err) {
             throw err;

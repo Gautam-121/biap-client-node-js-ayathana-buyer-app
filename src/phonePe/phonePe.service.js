@@ -7,11 +7,11 @@ import axios from 'axios';
 import NoRecordFoundError from '../lib/errors/no-record-found.error.js';
 import RefundModel from '../razorPay/db/refund.js';
 import mongoose from "mongoose"
-// const confirmOrderService = new ConfirmOrderService();
+import { confirmOrderService } from '../app.js';
 
+// const confirmOrderService = new ConfirmOrderService();
 class PhonePeService {
-  constructor(confirmOrderService) {
-    this.confirmOrderService = confirmOrderService
+  constructor() {
     this.merchantId = process.env.PHONEPE_MERCHANT_ID || "PGTESTPAYUAT78";
     this.saltKey = process.env.PHONEPE_SALT_KEY || "b843d817-f5e8-4d36-8917-1c6e045a1af9";
     this.saltIndex = process.env.PHONEPE_SALT_INDEX || 1;
@@ -162,6 +162,8 @@ class PhonePeService {
         }
       );
 
+      console.log("refundResponse of PhonePe" , response.data)
+
       // Extract PhonePe's refund transaction ID
       const phonePeRefundId = response.data?.data?.transactionId;
 
@@ -169,7 +171,7 @@ class PhonePeService {
       await this._updateRefundRecord(
         refundRecord._id, 
         {
-          status: response.code === "PAYMENT_PENDING" ? "PROCESSING" : response.code === "PAYMENT_SUCCESS" ? "COMPLETED" : "FAILED",
+          status: response.data?.code === "PAYMENT_PENDING" ? "PROCESSING" : response.data.code === "PAYMENT_SUCCESS" ? "COMPLETED" : "FAILED",
           refundId: phonePeRefundId, // Store PhonePe's refund transaction ID
           response: response?.data,
           lastAttempt: new Date(),
@@ -178,23 +180,29 @@ class PhonePeService {
         session
     );
 
+    console.log("responseCode" , response.data?.code)
+    console.log("response" , response)
+
       // Update seller transaction status
-      if (response.code === "PAYMENT_SUCCESS") {
+      if (response.data.code === "PAYMENT_SUCCESS") {
         sellerTransaction.status = "REFUNDED";
         await sellerTransaction.save({ session });
       }
 
-      return response
+      return response.data;
 
     } catch (error) {
+      console.log("Refund attempt failed, retrying...", {
+        error: error.message,
+        stack: error.stack,
+      });
 
       // Retry logic
       if (attempt < 3) {
-        console.log(`Refund attempt ${attempt} failed, retrying...`);
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.pow(2, attempt) * 1000)
-        );
-        return this._processRefundWithRetry(refundRecord, sellerTransaction, attempt + 1);
+        const retryDelay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        console.log(`Retrying refund attempt ${attempt} in ${retryDelay / 1000} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        return this._processRefundWithRetry(refundRecord, sellerTransaction, attempt + 1 , session);
       }
 
       // Update refund record with failure after all retries
@@ -209,7 +217,7 @@ class PhonePeService {
         session
       );
 
-      return 
+      return null
     }
   }
 
@@ -229,7 +237,7 @@ class PhonePeService {
                 status: "SUCCESS",
                 payment: parentTransaction.payment, // Inherit payment details from parent
                 paymentId: parentTransaction.paymentId || null, // Store seller-specific paymentId here
-                parentTransactionId: parentTransaction.merchnatTxnId, // Link to parent transaction
+                parentTransactionId: parentTransaction.merchantTxnId, // Link to parent transaction
                 updatedAt: Date.now(), // Always update the timestamp
             };
 
@@ -300,7 +308,7 @@ class PhonePeService {
             merchantTransactionId: merchantTransactionId,
             merchantUserId: user.decodedToken.uid,
             amount: totalAmount * 100, // Convert to paise
-            mobileNumber: user.data.phone,
+            mobileNumber: user?.phone,
             callbackUrl: `${this.appUrl}/clientApis/v2/phonepe/webhook`,
             paymentInstrument: {
                 type: "PAY_PAGE",
@@ -313,6 +321,21 @@ class PhonePeService {
 
         // Calculate Checksum
         const checksum = this._calculateChecksum(base64Body, payEndPoint);
+
+        //Step-4 Make API call to PhonePe
+        const response = await axios.post(
+          "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay",
+          { request: base64Body },
+          {
+              headers: {
+                  "Content-Type": "application/json",
+                  "X-VERIFY": checksum,
+                  accept: "application/json",
+              },
+          }
+      );
+
+      console.log("response" , response?.data?.data?.instrumentResponse)
 
         // Create a single transaction record for the total payment
         const totalTransaction = new Transaction({
@@ -518,12 +541,14 @@ async processPaymentWebhook(signature, encodedResponse) {
             },
           }));
 
+          console.log("responseData" , responseData)
+
             // Commit current transaction before starting new one
             await session.commitTransaction();
             session.endSession();
             session = null;
 
-            return await this.confirmOrderService.confirmMultipleOrder(
+            return await confirmOrderService.confirmMultipleOrder(
                 responseData,
                 merchantTransactionId,
             );
@@ -803,16 +828,18 @@ async processPaymentWebhook(signature, encodedResponse) {
       // Create refund record with transaction
       const refundRecord = await this._createRefundRecord(
         {
-            originalTransactionId: parentTransaction.merchnatTxnId,
+            originalTransactionId: parentTransaction.merchantTxnId,
             refundTransactionId: refundTxnId,
-            sellerTransactionId: sellerTransaction.transactionId, // Seller-specific transaction ID
-            parentTransactionId: parentTransaction.transactionId, // Parent transaction ID for reference
+            sellerTransactionId: sellerTransaction.merchantTxnId, // Seller-specific transaction ID
+            parentTransactionId: parentTransaction.merchantTxnId, // Parent transaction ID for reference
             amount: refundAmount,
             status: 'INITIATED',
             refundType: refundAmount === sellerTransaction.amount ? "FULL" : "PARTIAL"
         },
         session
     );
+
+    console.log("Refund-Record" , refundRecord)
 
       // Initiate refund with retry mechanism
       const refundResult = await this._processRefundWithRetry(
@@ -821,6 +848,9 @@ async processPaymentWebhook(signature, encodedResponse) {
         1,
         session
       );
+
+      console.log("refundResult" , refundResult)
+      console.log("sellerOrderTxnId" , sellerTransaction.orderId)
 
       if (!refundResult) {
         console.error(`Refund failed for transactionId: ${sellerOrderId}`);
@@ -859,7 +889,7 @@ async processPaymentWebhook(signature, encodedResponse) {
           const totalRefundedAmount = await Transaction.aggregate([
             {
               $match: {
-                parentTransactionId: parentTransaction.merchnatTxnId,
+                parentTransactionId: parentTransaction.merchantTxnId,
                 status: "REFUNDED",
               },
             },
@@ -874,7 +904,7 @@ async processPaymentWebhook(signature, encodedResponse) {
           if (totalRefundedAmount[0]?.totalRefunded === parentTransaction.amount) {
             // Full refund: Update parent transaction status
             await Transaction.findOneAndUpdate(
-              { merchnatTxnId: parentTransaction.merchnatTxnId },
+              { merchnatTxnId: parentTransaction.merchantTxnId },
               {
                 status: "REFUNDED",
                 updatedAt: new Date(),
@@ -884,7 +914,7 @@ async processPaymentWebhook(signature, encodedResponse) {
           } else {
             // Partial refund: Increment refunded amount in parent transaction
             await Transaction.findOneAndUpdate(
-              { merchnatTxnId: parentTransaction.merchnatTxnId },
+              { merchnatTxnId: parentTransaction.merchantTxnId },
               {
                 $inc: { refundedAmount: refundAmount },
                 updatedAt: new Date(),
@@ -905,7 +935,7 @@ async processPaymentWebhook(signature, encodedResponse) {
         }
 
         // Example: Notify user of refund Initiated (implement notification logic)
-
+        console.log("Notify user about refund is initiated")
         // await this._sendRefundCompletionNotification(refundRecord.userId);
 
       }

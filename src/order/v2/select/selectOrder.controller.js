@@ -33,33 +33,36 @@ class SelectOrderController {
     * @return {callback}
     */
     async selectMultipleOrder(req, res, next) {
-        const { body: requests } = req;
-
-        const verificationStatus = await checkPhoneVerificationStatus(req.user.decodedToken.uid);
-
-        if (verificationStatus.requiresPhoneVerification) {
-            throw new UnauthenticatedError(`Please verify your phone number before proceeding with the transaction`)
-        }
-
-         // Validate requests array
-         if (!Array.isArray(requests) || requests.length === 0) {
-            throw new BadRequestParameterError("Invalid or empty requests array")
-        }
-
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new BadRequestParameterError(errors.array()[0].msg);
-        }
-
-        if (requests && requests.length) {
-            selectOrderService.selectMultipleOrder(requests).then(response => {
-                res.json(response);
-            }).catch((err) => {
-                next(err);
-            });
-
+        try {
+            const { body: requests } = req;
+    
+            const verificationStatus = await checkPhoneVerificationStatus(req.user.decodedToken.uid);
+    
+            if (verificationStatus.requiresPhoneVerification) {
+                return next(new UnauthenticatedError(`Please verify your phone number before proceeding with the transaction`));
+            }
+    
+            // Validate requests array
+            if (!Array.isArray(requests) || requests.length === 0) {
+                return next(new BadRequestParameterError("Invalid or empty requests array"));
+            }
+    
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return next(new BadRequestParameterError(errors.array()[0].msg));
+            }
+    
+            if (requests && requests.length) {
+                selectOrderService.selectMultipleOrder(requests)
+                    .then(response => res.json(response))
+                    .catch(err => next(err)); // ✅ Pass error to next() instead of throwing
+            }
+    
+        } catch (error) {
+            next(error); // ✅ Ensure all errors are passed to Express error handling middleware
         }
     }
+    
 
     /**
     * on select order

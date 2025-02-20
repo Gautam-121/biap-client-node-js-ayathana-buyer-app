@@ -15,13 +15,14 @@ import OrderRequestLogMongooseModel from "../../v1/db/orderRequestLog.js";
 import Fulfillments from "../db/fulfillments.js";
 import Settlements from "../db/settlement.js";
 import FulfillmentHistory from "../db/fulfillmentHistory.js";
-import {v4 as uuidv4} from "uuid";
+import {v4} from "uuid";
 import Transaction from "../../../razorPay/db/transaction.js";
 import RazorPayService from "../../../razorPay/razorPay.service.js";
 import PhonePeService from "../../../phonePe/phonePe.service.js";
 import BadRequestParameterError from "../../../lib/errors/bad-request-parameter.error.js";
 // import {Payment} from "../models";
 
+import mongoose from "mongoose";
 
 const razorPayService = new RazorPayService();
 const bppUpdateService = new BppUpdateService();
@@ -31,17 +32,18 @@ class UpdateOrderService {
 
     // Helper function to parse ISO 8601 durations (e.g., "P7D") into { days } for `date-fns`
     parseDuration(duration) {
-        const durationRegex = /^P(?:(\d+)D)?$/;
-        const matches = duration.match(durationRegex);
-
+        const regex = /P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?/;
+        const matches = duration.match(regex);
         if (!matches) {
-            throw new BadRequestParameterError(
-                "The return window duration format is invalid. Please check the seller's return policy."
-            );
+            throw new Error(`Invalid duration format: ${duration}`);
         }
-
+    
         return {
-            days: matches[1] ? parseInt(matches[1], 10) : 0,
+            weeks: parseInt(matches[1] || 0, 10),
+            days: parseInt(matches[2] || 0, 10),
+            hours: parseInt(matches[3] || 0, 10),
+            minutes: parseInt(matches[4] || 0, 10),
+            seconds: parseInt(matches[5] || 0, 10),
         };
     }
 
@@ -84,12 +86,20 @@ class UpdateOrderService {
                 // Parse updatedAt timestamp and calculate return window
                 const updatedAt = parseISO(orderDetails[0].updatedAt);
                 const returnWindowDuration = data?.product["@ondc/org/return_window"]; // Example: "P7D"
-                const returnWindowDate = add(updatedAt, parseDuration(returnWindowDuration));
+
+                if (!returnWindowDuration) {
+                    throw new BadRequestParameterError(`Return window duration is missing for item ID ${item.id}.`);
+                }
+
+                const parsedDuration = this.parseDuration(returnWindowDuration);
+
+                const returnWindowDate = add(updatedAt, parsedDuration);
 
                 if (isBefore(new Date(), returnWindowDate) === false) {
                     throw new BadRequestParameterError(`The return window for item ID ${item.id} has expired.`);
                 }
 
+                item.tags["ttl_reverseqc"] = data?.product["@ondc/org/return_window"]
                 item.tags["ttl_approval"] = returnWindowDate ? returnWindowDate : ""
                 item.tags["parent_item_id"] = data?.product?.parent_item_id ? data?.product?.parent_item_id : ""
             }
@@ -123,7 +133,7 @@ class UpdateOrderService {
                                 update_type: "return",
                                 reason_code: item?.tags?.reason_code,
                                 ttl_approval: item?.tags?.ttl_approval,
-                                ttl_reverseqc: "P3D",
+                                ttl_reverseqc: item?.tags?.ttl_reverseqc,
                                 parent_item_id: item?.tags?.parent_item_id,
                                 image: item?.tags?.image
                             }
@@ -186,11 +196,11 @@ class UpdateOrderService {
                             },
                             {
                                 "code":"ttl_approval",
-                                "value":"PT24H"
+                                "value":item.tags.ttl_approval || "PT24H"
                             },
                             {
                                 "code":"ttl_reverseqc",
-                                "value":"P3D"
+                                "value":item.tags.ttl_reverseqc || "P3D"
                             }
                         ]
                 }
@@ -253,6 +263,10 @@ class UpdateOrderService {
             );
         }
         catch (err) {
+            console.log("UpdateOrderService -> update -> err",{
+                message:err.message,
+                stack:err.stack
+            })
             // Rollback the transaction in case of an error
             if (session) {
                 await session.abortTransaction();
@@ -459,6 +473,9 @@ class UpdateOrderService {
                     action: PROTOCOL_CONTEXT.ON_UPDATE
                 });
 
+                await session.commitTransaction
+                session.endSession();
+
                 return {
                     context,
                     error: {
@@ -544,13 +561,15 @@ class UpdateOrderService {
                                     state:fl.state.descriptor.code
                                 }).session(session)
                                 if(!existingFulfillment){
-                                    await FulfillmentHistory.create({
-                                        orderId:protocolUpdateResponse?.message?.order.id,
-                                        type:fl.type,
-                                        id:fl.id,
-                                        state:fl.state.descriptor.code,
-                                        updatedAt:protocolUpdateResponse?.message?.order?.updated_at?.toString()
-                                    },{ session })
+                                    await FulfillmentHistory.create([
+                                        {
+                                            orderId:protocolUpdateResponse?.message?.order.id,
+                                            type:fl.type,
+                                            id:fl.id,
+                                            state:fl.state.descriptor.code,
+                                            updatedAt:protocolUpdateResponse?.message?.order?.updated_at?.toString()
+                                        }
+                                    ],{session});
                                 }
                                 // }
 
@@ -607,7 +626,7 @@ class UpdateOrderService {
                                                 "bpp_id":settlementContext.bpp_id,
                                                 "bpp_uri":settlementContext.bpp_uri,
                                                 "transaction_id":settlementContext.transaction_id,
-                                                "message_id":uuidv4(),
+                                                "message_id":v4(),
                                                 "city":settlementContext.city,
                                                 "country":settlementContext.country,
                                                 "timestamp":settlementTimeStamp
@@ -633,7 +652,7 @@ class UpdateOrderService {
                                                                             "settlement_counterparty":"buyer",
                                                                             "settlement_phase":"refund",
                                                                             "settlement_type":settlement_type,
-                                                                            "settlement_amount": netRefund, //TODO; fix this post qoute calculation
+                                                                            "settlement_amount": String(netRefund), //TODO; fix this post qoute calculation
                                                                             "settlement_timestamp":settlementTimeStamp
                                                                         }
                                                                     ]

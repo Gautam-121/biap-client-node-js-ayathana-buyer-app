@@ -15,6 +15,8 @@ import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 import validator from 'validator';
 import appVersionValidator from '../src/middlewares/appVersionValidator.js'
+import { initializeServices } from './utils/serviceFactory.js'
+const { phonePeService, confirmOrderService } = initializeServices();
 
 const app = express();
 global.redisCache = new Redis(process.env.BHASHINI_REDIS_PORT, process.env.BHASHINI_REDIS_HOST);
@@ -23,6 +25,7 @@ const purify = DOMPurify(window);
 
 loadEnvVariables();
 initializeFirebase();
+
 
 app.use(cookieParser());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -146,3 +149,5 @@ dbConnect()
         console.log("Error connecting to the database", error);
         return;
     });
+
+export { phonePeService, confirmOrderService };

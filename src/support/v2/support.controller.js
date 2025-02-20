@@ -34,10 +34,10 @@ class SupportController {
     * @return {callback}
     */
     supportMultipleOrder(req, res, next) {
-        const { body: supportRequests } = req;
+        const { body: supportRequests , param } = req;
 
         if (supportRequests && supportRequests.length) {
-            supportService.supportMultipleOrder(supportRequests).then(response => {
+            supportService.supportMultipleOrder(supportRequests , param.orderId).then(response => {
                 res.json(response);
             }).catch((err) => {
                 next(err);

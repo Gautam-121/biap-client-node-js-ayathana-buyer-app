@@ -1,5 +1,5 @@
 import BadRequestParameterError from '../../lib/errors/bad-request-parameter.error.js';
-import { addSSEConnection } from '../../utils/sse.js';
+import { addSSEConnection , checkSSEConnection} from '../../utils/sse.js';
 
 import SseProtocol from './sseProtocol.service.js';
 import ConfigureSse from "./configureSse.service.js";
@@ -19,8 +19,17 @@ class SseController {
         try {
             const { query = {} } = req;
             const { messageId } = query;
-
             console.log("[Headers] in event call" , req.headers)
+
+            if (!messageId || !messageId.length) {
+                console.log("[onEvent] Invalid messageId:", messageId);
+                throw new BadRequestParameterError("Invalid messageId")
+            }
+
+            if (checkSSEConnection(messageId)) {
+                console.warn(`[onEvent] Connection already exists for messageId: ${messageId}`);
+                throw new BadRequestParameterError("Connection already exists")
+            }
 
             if (messageId && messageId.length) {
                 const configureSse = new ConfigureSse(req, res, messageId);
@@ -32,6 +41,7 @@ class SseController {
         }
         catch (err) {
             console.log("error----------->",err);
+            if(err instanceof BadRequestParameterError) throw err
             throw err;
         }
     }

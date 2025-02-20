@@ -20,14 +20,12 @@ class SseEvent extends EventEmitter {
     init(req, res) {
         let id = 0;
         let listenerAttached = false; // Track if any listener is attached
-        let inactivityTimeout; // Timeout for inactivity
 
         req.socket.setTimeout(0);
         req.socket.setNoDelay(true);
         req.socket.setKeepAlive(true);
-
         res.statusCode = 200;
-
+    
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('Cache-Control', 'no-cache');
@@ -49,47 +47,33 @@ class SseEvent extends EventEmitter {
                 console.log("Closing SSE connection due to no listener within 60 seconds");
                 res.end();
             }
-        }, 60000); // 60 seconds
-
-        // ✅ Function to reset inactivity timeout when data is emitted
-        const resetInactivityTimeout = () => {
-            if (inactivityTimeout) clearTimeout(inactivityTimeout);
-            inactivityTimeout = setTimeout(() => {
-                console.log("Closing SSE connection due to inactivity for 60 seconds");
-                res.end();
-            }, 60000);
-        };
+        }, 60000);
 
         // Add keepalive interval - Added this one
         const keepaliveTimer = setInterval(() => {
-            res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({messageId: "", count: 0})}\n\n`);
+            console.log("Sending keepalive message...");
+            try {
+                res.write(`id: \nevent: keepalive\ndata: ${JSON.stringify({ messageId:this.options.eventId, count: 0 })}\n\n`);
+            } catch (err) {
+                console.error("[SseEvent] Error sending keepalive message:", err);
+                clearInterval(keepaliveTimer);
+                res.end();
+            }
         }, this.options.keepaliveInterval);
 
-        // Add connection detection
-        const detectDisconnection = setInterval(() => {
-            if (res.writableEnded || !res.writableFinished) {
-                clearInterval(keepaliveTimer);
-                clearInterval(detectDisconnection);
-                clearTimeout(closeTimeout); // ✅ Clear timeout if connection is closed
-                clearTimeout(inactivityTimeout);
-                req.emit('close');
-            }
-        }, 30000);
 
         // ✅ Handle error
         res.on('error', (error) => {
             clearInterval(keepaliveTimer);
-            clearInterval(detectDisconnection);
             clearTimeout(closeTimeout);
-            clearTimeout(inactivityTimeout);
             this.emit('error', error);
         });
 
         // ✅ Listener for sending data
         const dataListener = data => {
+            console.log("Data listener attached. Clearing close timeout.");
             listenerAttached = true; // ✅ Mark that a listener is attached
             clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
-            resetInactivityTimeout(); // Reset inactivity timer on new data
 
             if (data.id)
                 res.write(`id: ${data.id}\n`);
@@ -106,10 +90,9 @@ class SseEvent extends EventEmitter {
 
         // ✅ Listener for serialized data
         const serializeListener = data => {
+            console.log("Serialize listener attached. Clearing close timeout.");
             listenerAttached = true; // ✅ Mark that a listener is attached
             clearTimeout(closeTimeout); // ✅ Clear timeout since a listener is attached
-            resetInactivityTimeout(); // Reset inactivity timer on new data
-
             const serializeSend = data.reduce((all, msg) => {
                 all += `id: ${id}\ndata: ${JSON.stringify(msg)}\n\n`;
                 id += 1;
@@ -134,12 +117,17 @@ class SseEvent extends EventEmitter {
 
          // ✅ Handle client disconnect
         req.on('close', () => {
+            console.log("Inside the closed connection")
             clearInterval(keepaliveTimer); // added this line
-            clearInterval(detectDisconnection); // Add this line
             clearTimeout(closeTimeout); // ✅ Ensure timeout is cleared on disconnect
             this.removeListener('data', dataListener);
             this.removeListener('serialize', serializeListener);
             this.setMaxListeners(this.getMaxListeners() - 2);
+
+            // Ensure the connection is not already closed
+            if (!res.writableEnded) {
+                res.end();
+            }
         });
     }
 

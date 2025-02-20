@@ -292,9 +292,8 @@ const initValidator = {
         body('*.message.fulfillments.*.type')
             .exists().withMessage("Fulfillment type is required")
             .isIn(['Delivery', 'Self-Pickup']).withMessage("Fulfillment type must be one of 'Delivery' or 'Self-Pickup'"),
-        body('*.message.delivery_info.*.id')
-            .exists().withMessage("Delivery ID is required")
-            .isUUID().withMessage("Delivery ID must be a valid UUID"),
+        body('*.message.delivery_info.id')
+            .exists().withMessage("Delivery ID is required"),        
         // Message -> Payment Validations
         body('*.message.payment.type')
             .exists().withMessage("Payment type is required")

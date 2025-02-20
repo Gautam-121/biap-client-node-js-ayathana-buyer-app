@@ -55,10 +55,6 @@ const transactionSchema = new mongoose.Schema({
         type: String, // Reference to the parent transaction
         required: false
     },
-    date: {
-        type: Number,
-        default: Date.now
-    },
     status: { 
         type: String,
         enum: ['INITIALIZE-PAYMENT', 'SUCCESS', 'FAILED', "PENDING", 'REFUNDED'],

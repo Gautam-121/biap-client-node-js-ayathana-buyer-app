@@ -3,6 +3,7 @@ import { PROTOCOL_CONTEXT } from "../../utils/constants.js";
 
 import BppSupportService from "./bppSupport.service.js";
 import ContextFactory from "../../factories/ContextFactory.js";
+import OrderMongooseModel from "../../order/v1/db/order.js";
 
 const bppSupportService = new BppSupportService();
 
@@ -12,16 +13,25 @@ class SupportService {
     * support order
     * @param {Object} supportRequest
     */
-    async support(supportRequest) {
+    async support(supportRequest , orderId) {
         try {
             const { context: requestContext, message } = supportRequest || {};
 
+            const orderDetails = await OrderMongooseModel.find({
+                id: orderId
+            }).lean();
+
+            if(orderDetails.length === 0)
+                throw new Error("Order not found");             
+
             const contextFactory = new ContextFactory();
             const context = contextFactory.create({
+                domain: orderDetails[0]?.domain,
+                bpp_uri: orderDetails[0]?.bpp_uri,
                 action: PROTOCOL_CONTEXT.SUPPORT,
-                transactionId: requestContext?.transaction_id,
-                bppId: requestContext?.bpp_id,
-                city:requestContext.city,
+                transactionId: orderDetails[0]?.transaction_id,
+                bppId: requestContext[0]?.bpp_id,
+                city:orderDetails[0]?.city,
                 state:requestContext.state
             });
 
@@ -39,12 +49,12 @@ class SupportService {
      * support multiple orders
      * @param {Array} requests 
      */
-    async supportMultipleOrder(requests) {
+    async supportMultipleOrder(requests , orderId) {
 
         const supportResponses = await Promise.all(
             requests.map(async request => {
                 try {
-                    const supportResponse = await this.support(request);
+                    const supportResponse = await this.support(request , orderId);
                     return supportResponse;
                 }
                 catch (err) {

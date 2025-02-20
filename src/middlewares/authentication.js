@@ -49,7 +49,7 @@ const authentication = (options) => async (req, res, next) => {
     try {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_access_token_secret');
-        req.user = { decodedToken: decoded.decodedToken , token };
+        
 
         // Get user ID from token
         const userId = decoded?.decodedToken?.uid;
@@ -60,6 +60,7 @@ const authentication = (options) => async (req, res, next) => {
         if (!user) {
             return next(new UnauthenticatedError("Invalid token or user not found"));
         }
+        req.user = { decodedToken: decoded.decodedToken , token , phone: user?.phone };
 
         next()
 
