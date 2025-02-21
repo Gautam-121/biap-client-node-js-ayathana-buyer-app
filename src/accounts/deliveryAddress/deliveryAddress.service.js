@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { v4 } from 'uuid';
 import NoRecordFoundError from '../../lib/errors/no-record-found.error.js';
 import DeliveryAddressMongooseModel from './db/deliveryAddress.js';
 import BadRequestParameterError from '../../lib/errors/bad-request-parameter.error.js';
@@ -22,7 +22,7 @@ class DeliveryAddressService {
             // Construct the delivery address schema to be saved to the database
             const deliveryAddressSchema = {
                 userId: user?.decodedToken?.uid, 
-                id: uuidv4(), 
+                id: v4(), 
                 descriptor: {
                     name: request?.descriptor?.name?.trim().replace(/\s+/g, ' '),
                     phone: request?.descriptor?.phone?.trim(),
@@ -136,6 +136,8 @@ class DeliveryAddressService {
                     lat: address.address?.lat,
                     lng: address.address?.lng
                 },
+                createdAt: address.createdAt,
+                updatedAt: address.updatedAt
             }));
         }
         catch (err) {
@@ -250,6 +252,8 @@ class DeliveryAddressService {
                     lat: storedDeliveryAddress?.address?.lat,
                     lng: storedDeliveryAddress?.address?.lng
                 },
+                createdAt: storedDeliveryAddress.createdAt,
+                updatedAt: storedDeliveryAddress.updatedAt
             };
         } catch (error) {
             // Abort transaction on error
@@ -350,7 +354,6 @@ class DeliveryAddressService {
             throw error;
         }
     }
-
 
 }
 

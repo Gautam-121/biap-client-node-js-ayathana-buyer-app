@@ -129,6 +129,21 @@ class BppConfirmService {
             //get TAT object from select request
             let on_select = await protocolGetDumps({type:"on_select",transaction_id:context.transaction_id})
 
+            if(!on_select || on_select.error){
+                return{
+                    message:{
+                        ack:{
+                            status:"NACK"
+                        }
+                    },
+                    error:{
+                        type: "server-error",
+                        code: 500,
+                        message: "Internal Server Error"
+                    }
+                  }
+                }
+
             console.log("on_select------------->",on_select)
 
             let on_select_fulfillments = on_select.request?.message?.order?.fulfillments??[]
@@ -294,15 +309,16 @@ class BppConfirmService {
             
 
             console.log({confirmRequest})
-            let confirmResponse = await this.confirm(confirmRequest);
 
-            if(confirmResponse.error){
-                //retrial attempt
-                console.log("error--------->",confirmResponse.message);
-
-
+            let confirmResponse;
+            let retryAttempts = 3;
+            for (let i = 0; i < retryAttempts; i++) {
+                confirmResponse = await this.confirm(confirmRequest);
+                if (!confirmResponse.error) break;
+                console.log(`Retrying confirm request... Attempt ${i + 1}`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 1s delay before retry
             }
-
+            
             return confirmResponse
 
            // return await this.confirm(confirmRequest);

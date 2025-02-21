@@ -245,13 +245,15 @@ class ConfirmOrderService {
                         orderId:orderSchema.id
                     }).session(session)
                     if(!existingFulfillment){
-                        await FulfillmentHistory.create({
-                            orderId:orderSchema.id,
-                            type:fulfillment.type,
-                            id:fulfillment.id,
-                            state:fulfillment.state.descriptor.code,
-                            updatedAt:orderSchema.toString()
-                        },{session})
+                        await FulfillmentHistory.create([
+                            {
+                                orderId:orderSchema.id,
+                                type:fulfillment.type,
+                                id:fulfillment.id,
+                                state:fulfillment.state.descriptor.code,
+                                updatedAt:orderSchema.toString()
+                            }
+                        ],{session})
                     }
                     console.log("existingFulfillment--->",existingFulfillment);
                     // }
@@ -334,6 +336,10 @@ class ConfirmOrderService {
             return response;
         }
         catch (err) {
+            console.error(`Error processing order:`, {
+                message: err.message,
+                stack: err.stack
+            });
             if(session){
                 // Rollback the transaction in case of an error
                 await session.abortTransaction();

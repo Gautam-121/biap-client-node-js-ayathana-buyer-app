@@ -50,7 +50,6 @@ const authentication = (options) => async (req, res, next) => {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_access_token_secret');
         
-
         // Get user ID from token
         const userId = decoded?.decodedToken?.uid;
 

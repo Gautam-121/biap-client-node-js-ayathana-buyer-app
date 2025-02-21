@@ -111,7 +111,7 @@ class AdminService {
                 stack: error.stack
             });
             // If the error is an instance of UnauthenticatedError, rethrow it
-            if (error instanceof UnauthenticatedError) throw error;
+            if (error instanceof UnauthenticatedError || error instanceof NoRecordFoundError) throw error;
             // Throw a generic error message to the client, or use the provided error message
             throw new Error(error.message || "Error Processing login");
         }

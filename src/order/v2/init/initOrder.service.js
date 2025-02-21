@@ -511,10 +511,13 @@ class InitOrderService {
                     return bppResponse;
                 }
                 catch (err) {
+                    console.log("error in initMultipleOrder---->",{
+                        message: err.message,
+                        stack: err.stack
+                    })
                     if(err instanceof BadRequestParameterError){
                         throw new err
                     }
-                    console.error("Order processing error:", err);
                     return err
                 }
 
@@ -616,6 +619,10 @@ class InitOrderService {
             return onInitOrderResponse;
         }
         catch (err) {
+            console.error("error in onInitMultipleOrder---->",{
+                message: err.message,
+                stack: err.stack
+            })
             if(session){
                 await session.abortTransaction(); // Rollback the transaction
                 session.endSession();

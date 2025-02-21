@@ -256,7 +256,10 @@ class PhonePeService {
             );
         }
     } catch (error) {
-        console.error("[Seller Transaction Processing Error]", error);
+        console.error("[Seller Transaction Processing Error]", {
+            error: error.message,
+            stack: error.stack, 
+        });
         throw error;
     }
   }
@@ -365,17 +368,18 @@ class PhonePeService {
             merchantTransactionId,
         };
     } catch (error) {
-
+        console.error("[PhonePe Multi-Seller createPayment Error]", {
+        error: error.message,
+        stack: error.stack,
+        });
         if(session){
           // Rollback the transaction in case of an error
           await session.abortTransaction();
           session.endSession();
         }
-
         if (error instanceof BadRequestParameterError) {
             throw error;
         }
-        console.error("[PhonePe Multi-Seller Payment Error]", error);
         throw error;
     }
 }
@@ -443,7 +447,10 @@ async processPaymentWebhook(signature, encodedResponse) {
 
       return { success: true, message: "Payment processed successfully" };
   } catch (error) {
-
+      console.error("[PhonePe Webhook Processing Error]", {
+          error: error.message,
+          stack: error.stack,
+      });
       if(session){
         await session.abortTransaction();
         session.endSession();
@@ -452,7 +459,6 @@ async processPaymentWebhook(signature, encodedResponse) {
       if (error instanceof BadRequestParameterError) {
           throw error;
       }
-      console.error("[PhonePe Webhook Processing Error]", error);
       throw error;
   }
 }
@@ -562,13 +568,16 @@ async processPaymentWebhook(signature, encodedResponse) {
             message: paymentStatus.message,
         };
     } catch (error) {
+      console.error("[Payment Verification Error]", {
+        error: error.message,
+        stack: error.stack,
+      });
         if(session){
           await session.abortTransaction();
         }
         if (error instanceof NoRecordFoundError) {
             throw error;
         }
-        console.error("[Payment Verification Error]", error);
         throw error;
     } finally{
         if(session){

@@ -621,12 +621,15 @@ class UserService {
             };
 
         } catch (error) {
+            console.error('Error in authWithPhone:', {
+                error: error.message,
+                stack: error.stack,
+            });
             if(session){
                 await session.abortTransaction();
                 session.endSession();
             }
             if(error instanceof BadRequestParameterError) throw error
-            console.log("error", error)
             throw new Error(error.message || "Verification otp send failed")
         }
     }
@@ -709,12 +712,14 @@ class UserService {
                 accessToken
             };
         } catch (error) {
-
+            console.error('Error in authWithPhoneVerify:', {
+                error: error.message,
+                stack: error.stack
+            });
             if(session){
                 await session.abortTransaction();
                 session.endSession();
             }
-
             if(error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) throw error
             throw new Error(error.message || 'Phone Auth failed');
         }
@@ -793,7 +798,10 @@ class UserService {
                 requiresPhoneVerification: true
             };
         } catch (error) {
-            console.error('Error initiating phone update:', error);
+            console.error('Error initiating phone update:', {
+                error: error.message,
+                stack: error.stack
+            });
             if(session){
                 await session.abortTransaction();
                 session.endSession();
@@ -869,6 +877,10 @@ class UserService {
                 user: this.sanitizeUser(existingUser)
             };
         } catch (error) {
+            console.error('Error verifying phone verification:', {
+                error: error.message,
+                stack: error.stack
+            });
             if(session){
                 await session.abortTransaction
                 session.endSession
@@ -876,7 +888,6 @@ class UserService {
             if (error instanceof BadRequestParameterError || error instanceof NoRecordFoundError) {
                 throw error;
             }
-            console.error('Error while verifying phone number:', error);
             throw new Error('An unexpected error occurred. Please try again later.');
         }
     }
@@ -898,7 +909,10 @@ class UserService {
                 data: this.sanitizeUser(foundUser)
             };
         } catch (error) {
-            console.error('Current user retrieval error:', error);
+            console.error('Current user retrieval error:', {
+                error: error.message,
+                stack: error.stack
+            });
             if(error instanceof NoRecordFoundError) throw error
             throw new Error(error.message || 'Failed to get user details');
         }
@@ -1013,7 +1027,10 @@ class UserService {
                 data: this.sanitizeUser(existingUser),
             };
         } catch (error) {
-            console.error('Error updating user details:', error);
+            console.error('Error updating user details:', {
+                error: error.message,
+                stack: error.stack
+            });
             if (error instanceof ConflictError || error instanceof UnauthenticatedError || error instanceof NoRecordFoundError || error instanceof BadRequestParameterError) {
                 throw error;
             }
@@ -1066,13 +1083,16 @@ class UserService {
     
         } catch (error) {
             // Abort transaction on error
+            console.error("Failed to remove user Account", {
+                error: error.message,
+                stack: error.stack
+            });
             if (session) {
                 await session.abortTransaction();
                 session.endSession();
             }
     
             if (error instanceof NoRecordFoundError) throw error;
-            console.error("Failed to remove user Account", error);
             throw new Error("Error deleting account. Please try again later");
         }
     }
@@ -1109,7 +1129,10 @@ class UserService {
                 message: 'FCM token updated successfully'
             };
         } catch (error) {
-            console.error('Update FCM token error:', error);
+            console.error('Update FCM token error:', {
+                error: error.message,
+                stack: error.stack
+            });
             if(error instanceof NoRecordFoundError) throw error
             throw new Error(error.message || 'Failed to update FCM token');
         }
